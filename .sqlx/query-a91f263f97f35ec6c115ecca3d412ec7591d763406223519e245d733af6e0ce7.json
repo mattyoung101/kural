@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select id, name, date, coords as \"coords!: _\" from systems where id = $1;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "date",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "coords!: _",
+        "type_info": {
+          "Custom": {
+            "name": "geometry",
+            "kind": "Simple"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a91f263f97f35ec6c115ecca3d412ec7591d763406223519e245d733af6e0ce7"
+}

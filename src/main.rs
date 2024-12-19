@@ -2,9 +2,12 @@ use core::f32;
 
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
+use compute::compute_single;
 use log::info;
 
 pub mod compute;
+pub mod router;
+pub mod types;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -39,13 +42,17 @@ enum Commands {
         capital: u64,
 
         #[arg(long)]
+        /// Ship cargo capacity
+        capacity: u32,
+
+        #[arg(long)]
         /// Starting system name. If not specified, the entire galaxy is considered.
         src: Option<String>,
 
         #[arg(long)]
         /// Max jumps to get from A to B. If unspecified, hops are not considered and your ship is
         /// assumed to be able to commute from any system to any other system in The Bubble.
-        max_jumps: Option<u32>
+        max_jumps: Option<u32>,
     },
 
     /// Prints version information.
@@ -72,10 +79,11 @@ async fn main() -> Result<()> {
             jump,
             capital,
             max_jumps,
+            capacity,
         } => {
             info!(
-                "Computing single hop trade route {} with jump dist: {}, initial capital: {}, max jumps: {}",
-                if let Some(x) = src {
+                "Computing single hop trade route {} with jump dist: {}, initial capital: {}, max jumps: {}, ship capacity: {}",
+                if let Some(ref x) = src {
                     format!("from {}", x).to_string()
                 } else {
                     "across the whole galaxy".to_string()
@@ -86,8 +94,12 @@ async fn main() -> Result<()> {
                     x.to_string()
                 } else {
                     "unspecified".to_string()
-                }
+                },
+                capacity
             );
+
+            compute_single(url, src.clone(), jump, capital).await?;
+
             Ok(())
         }
     }

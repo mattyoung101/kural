@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select\n                                market_id,\n                                name,\n                                mean_price,\n                                buy_price,\n                                sell_price,\n                                demand,\n                                demand_bracket,\n                                stock,\n                                stock_bracket,\n                                listed_at\n                            from\n                                listings\n                            where market_id = $1;\n                                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "market_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "mean_price",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "buy_price",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "sell_price",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "demand",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "demand_bracket",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "stock",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "stock_bracket",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "listed_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e1467ff36a13f572eefab0e3038fb7ca4472cdcb70b20cbd70cd366813753cef"
+}
