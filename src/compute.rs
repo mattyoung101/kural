@@ -67,18 +67,43 @@ pub async fn compute_single(
                 .choose_multiple(&mut rng, sample_size);
 
             info!("Processing sampled stations");
+            let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
 
-            for station1 in sample.clone().into_iter().progress() {
-                let commodities1 = station1.get_commodities(&pool);
+            // for station1 in sample.clone().into_iter().progress() {
+            //     let commodities1 = station1.get_commodities(&pool);
+            //
+            //     // now consider this station against every other station in the sample
+            //     for station2 in sample.clone() {
+            //         // skip self
+            //         if station2.id == station1.id {
+            //             continue
+            //         }
+            //
+            //         let commodities2 = station2.get_commodities(&pool);
+            //     }
+            // }
 
-                // now consider this station against every other station in the sample
-                for station2 in sample.clone() {
-                    // skip self
-                    if station2.id == station1.id {
-                        continue
+            futures::stream::iter(sample.clone().iter()).for_each(|station1| {
+                let pool = pool.clone();
+                let bar = bar.clone();
+                let sample_ref = &sample;
+                async move {
+                    let commodities1 = station1.get_commodities(&pool).await;
+
+                    for station2 in sample_ref {
+                        // skip self
+                        if station2.id == station1.id {
+                            continue
+                        }
+
+                        // let commodities2 = station2.get_commodities(&pool).await;
                     }
+
+                    bar.inc(1);
                 }
-            }
+            }).await;
+
+            bar.finish();
 
             Ok(())
         }
