@@ -24,3 +24,4 @@ elite_journal = { version = "0.2.2", features = ["geozero", "sqlx", "with-postgi
 geo-types = { version = "0.7.14", features = ["approx", "multithreading", "serde"] }
 good_lp = "1.10.0"
 rand = { version = "0.8.5", features = ["small_rng"] }
+itertools = "0.13.0"

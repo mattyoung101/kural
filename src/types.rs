@@ -47,7 +47,7 @@ impl<'a> StationMarket<'a> {
 
 impl Station {
     /// Gets the commodities in this station, assuming it has a market
-    pub async fn get_commodities(self: Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
+    pub async fn get_commodities(self: &Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
         return sqlx::query_as!(Commodity,

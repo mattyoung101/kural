@@ -1,11 +1,12 @@
 #[allow(unused_variables)]
 use std::sync::Arc;
 
+use crate::solve::solve_knapsack;
 use crate::types::{Station, StationMarket};
-use crate::solve::{solve_knapsack};
 use color_eyre::Result;
 use futures::StreamExt;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressIterator};
+use itertools::iproduct;
 use log::{debug, info};
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use sqlx::postgres::PgPoolOptions;
@@ -61,57 +62,23 @@ pub async fn compute_single(
                 .collect();
 
             // now we can compute the random subsample
-            let sample = Arc::new(&&filtered_stations.into_iter().choose_multiple(&mut rng, sample_size));
+            let sample = filtered_stations
+                .into_iter()
+                .choose_multiple(&mut rng, sample_size);
 
             info!("Processing sampled stations");
-            let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
-            futures::stream::iter((*sample).clone())
-                .for_each(|station1| {
-                    let pool = pool.clone();
-                    let bar = bar.clone();
-                    let sample = sample.clone();
-                    async move {
-                        // KEEP THIS
-                        // let system = sqlx::query_as!(
-                        //     System,
-                        //     r#"select id, name, date, coords as "coords!: _" from systems where id = $1;"#,
-                        //     station1.system_id.unwrap()
-                        // )
-                        // .fetch_one(&value)
-                        // .await
-                        // .unwrap();
 
-                        // FIXME MEGA UGLY
-                        let commodities1 = Arc::new(<Station as Clone>::clone(&station1).get_commodities(&pool).await.unwrap());
+            for station1 in sample.clone().into_iter().progress() {
+                let commodities1 = station1.get_commodities(&pool);
 
-                        // now consider this station against every other station in the sample
-                        for station2 in sample.into_iter() {
-                            // skip self
-                            if station2.id == station1.clone().id {
-                                continue
-                            }
-
-                            let commodities2 = <Station as Clone>::clone(&station2).get_commodities(&pool).await.unwrap();
-                            let commodities1_clone = Arc::clone(&commodities1);
-
-                            debug!("Considering station {} -> {}", station1.clone().name, station2.name);
-
-
-                            // compute knapsack solution
-                            let result = task::spawn_blocking(move || {
-                                solve_knapsack(
-                                    StationMarket::new(&station1, &commodities1_clone),
-                                    StationMarket::new(&station2, &commodities2),
-                                    capacity, capital);
-                            }).await.unwrap();
-                        }
-
-                        bar.inc(1);
+                // now consider this station against every other station in the sample
+                for station2 in sample.clone() {
+                    // skip self
+                    if station2.id == station1.id {
+                        continue
                     }
-                })
-                .await;
-
-            bar.finish();
+                }
+            }
 
             Ok(())
         }
