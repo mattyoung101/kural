@@ -8,6 +8,7 @@ use log::info;
 pub mod compute;
 pub mod router;
 pub mod types;
+pub mod solve;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -53,6 +54,12 @@ enum Commands {
         /// Max jumps to get from A to B. If unspecified, hops are not considered and your ship is
         /// assumed to be able to commute from any system to any other system in The Bubble.
         max_jumps: Option<u32>,
+
+        #[arg(long)]
+        #[clap(default_value = "0.5")]
+        /// For each station, this is the percent between 0.0 and 1.0 of other stations in the
+        /// galaxy to randomly sample
+        random_sample: f32,
     },
 
     /// Prints version information.
@@ -80,6 +87,7 @@ async fn main() -> Result<()> {
             capital,
             max_jumps,
             capacity,
+            random_sample,
         } => {
             info!(
                 "Computing single hop trade route {} with jump dist: {}, initial capital: {}, max jumps: {}, ship capacity: {}",
@@ -98,7 +106,7 @@ async fn main() -> Result<()> {
                 capacity
             );
 
-            compute_single(url, src.clone(), jump, capital).await?;
+            compute_single(url, src.clone(), jump, capital, capacity, random_sample).await?;
 
             Ok(())
         }
