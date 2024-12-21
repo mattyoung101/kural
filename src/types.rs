@@ -1,4 +1,7 @@
+use dashmap::DashMap;
 use geozero::wkb;
+use lazy_static::lazy_static;
+use ordered_float::{Float, OrderedFloat};
 use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
 
 #[derive(Debug, FromRow)]
@@ -45,11 +48,20 @@ impl<'a> StationMarket<'a> {
     }
 }
 
+// lazy_static! {
+//     static ref CACHE: DashMap<Station, Vec<Commodity>> = DashMap::new();
+// }
+
 impl Station {
     /// Gets the commodities in this station, assuming it has a market
     pub async fn get_commodities(self: &Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
+
+        // if CACHE.contains_key(self) {
+        //     return Ok(CACHE.get(self).unwrap())
+        // }
+
         return sqlx::query_as!(Commodity,
             r#"
             WITH latest_listings AS (
