@@ -1,4 +1,4 @@
-use crate::solve::solve_knapsack;
+use crate::solve::{self, solve_knapsack};
 use crate::types::{Commodity, Station, StationMarket};
 use color_eyre::Result;
 use dashmap::DashMap;
@@ -30,13 +30,12 @@ async fn get_all_stations(pool: &Pool<Postgres>) -> Result<Vec<Station>> {
     .await?);
 }
 
-/// Finds commodities for all stations
-async fn get_all_commodities(pool: &Pool<Postgres>) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
-    let all_stations = get_all_stations(&pool).await?;
+/// Finds commodities for a group of stations
+async fn get_all_commodities(stations: &Vec<Station>, pool: &Pool<Postgres>) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
     let out: Arc<DashMap<i64, Vec<Commodity>>> = Arc::new(DashMap::new());
 
-    let bar = Arc::new(ProgressBar::new(all_stations.len().try_into().unwrap()));
-    futures::stream::iter(all_stations.clone().iter())
+    let bar = Arc::new(ProgressBar::new(stations.len().try_into().unwrap()));
+    futures::stream::iter(stations.clone().iter())
         .for_each(|station1| {
             let pool = pool.clone();
             let bar = bar.clone();
@@ -71,10 +70,6 @@ pub async fn compute_single(
             info!("Fetching all stations");
             let stations = get_all_stations(&pool).await?;
 
-            info!("Retrieving all commodities for {} stations", stations.len());
-            // FIXME only retrieve station commodities for those in our sample
-            let all_commodities = get_all_commodities(&pool).await?;
-
             // the galaxy is very large, so randomly sample a number of stations
             let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
             info!(
@@ -95,41 +90,28 @@ pub async fn compute_single(
                 .into_iter()
                 .choose_multiple(&mut rng, sample_size);
 
-            info!("Processing sampled stations");
-            let bar = ProgressBar::new(sample.len().try_into().unwrap());
+            info!("Retrieving all commodities for {} sampled stations", sample.len());
+            let all_commodities = get_all_commodities(&sample, &pool).await?;
 
-            // futures::stream::iter(sample.clone().iter()).for_each(|station1| {
-            //     let bar = bar.clone();
-            //     let sample_ref = &sample;
-            //     let all_commodities = all_commodities.clone();
-            //     async move {
-            //         let commodities1 = all_commodities.get(&station1.id).unwrap();
-            //
-            //         for station2 in sample_ref {
-            //             // skip self
-            //             if station2.id == station1.id {
-            //                 continue
-            //             }
-            //
-            //             let commodities2 = all_commodities.get(&station2.id).unwrap();
-            //         }
-            //
-            //         bar.inc(1);
-            //     }
-            // }).await;
+            info!("Computing trades for {} stations (approx {} individual routes)", sample.len(), sample.len().pow(2) - sample.len());
+            let bar = ProgressBar::new(sample.len().try_into().unwrap());
 
             sample.par_iter().for_each(|station1| {
                 let commodities1 = all_commodities.get(&station1.id).unwrap();
-
                 for station2 in &sample {
                     // skip self
                     if station2.id == station1.id {
                         continue;
                     }
-
                     let commodities2 = all_commodities.get(&station2.id).unwrap();
-                }
 
+                    let solution = solve_knapsack(
+                        StationMarket::new(station1, &commodities1),
+                        StationMarket::new(station2, &commodities2),
+                        capacity,
+                        capital
+                    );
+                }
                 bar.inc(1);
             });
 

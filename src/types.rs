@@ -3,6 +3,7 @@ use geozero::wkb;
 use lazy_static::lazy_static;
 use ordered_float::{Float, OrderedFloat};
 use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
+use color_eyre::Result;
 
 #[derive(Debug, FromRow)]
 pub struct System {
@@ -42,26 +43,44 @@ pub struct StationMarket<'a> {
     pub commodities: &'a Vec<Commodity>
 }
 
+#[derive(Debug, FromRow, Clone)]
+/// Order of commodities to buy or sell in a system
+pub struct Order<'a> {
+    pub commodity: &'a Commodity,
+    pub count: u32
+}
+
+#[derive(Debug, FromRow, Clone)]
+/// Solution to a knapsack problem
+pub struct TradeSolution<'a> {
+    /// List of commodities to buy in the source system
+    pub buy: Vec<Order<'a>>,
+    /// List of commodities to sell in the destination system
+    pub sell: Vec<Order<'a>>
+}
+
+impl<'a> TradeSolution<'a> {
+    pub fn new(buy: Vec<Order<'a>>, sell: Vec<Order<'a>>) -> Self {
+        Self { buy, sell }
+    }
+}
+
 impl<'a> StationMarket<'a> {
     pub fn new(station: &'a Station, commodities: &'a Vec<Commodity>) -> Self {
         Self { station, commodities }
     }
-}
 
-// lazy_static! {
-//     static ref CACHE: DashMap<Station, Vec<Commodity>> = DashMap::new();
-// }
+    /// Finds the commodity in the market
+    pub fn get_commodity(self: &Self, name: &String) -> Option<&Commodity> {
+        return self.commodities.into_iter().find(|commodity| *commodity.name == *name);
+    }
+}
 
 impl Station {
     /// Gets the commodities in this station, assuming it has a market
     pub async fn get_commodities(self: &Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
-
-        // if CACHE.contains_key(self) {
-        //     return Ok(CACHE.get(self).unwrap())
-        // }
-
         return sqlx::query_as!(Commodity,
             r#"
             WITH latest_listings AS (
