@@ -1,37 +1,50 @@
-use crate::solve::{self, solve_knapsack};
+use crate::solve::solve_knapsack;
 use crate::types::{Commodity, Station, StationMarket};
+use crate::LandingPad;
 use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressIterator};
-use itertools::iproduct;
-use log::{debug, info};
+use indicatif::ProgressBar;
+use log::info;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
-#[allow(unused_variables)]
 use std::sync::Arc;
-use tokio::task;
+#[allow(unused_variables)]
 
 /// Gets a list of all stations
-async fn get_all_stations(pool: &Pool<Postgres>) -> Result<Vec<Station>> {
+async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Result<Vec<Station>> {
+    let pad_name = if landing_pad == LandingPad::Small {
+        "%s%"
+    } else if landing_pad == LandingPad::Medium {
+        "%m%"
+    } else if landing_pad == LandingPad::Large {
+        "%l%"
+    } else {
+        panic!();
+    };
+
     return Ok(sqlx::query_as!(
         Station,
         r#"SELECT
             id, name, distance_to_arrival, market_id, system_id
         FROM stations
         WHERE
-            market_id IS NOT NULL and system_id IS NOT NULL
-        ;"#
+            market_id IS NOT NULL AND system_id IS NOT NULL AND landing_pad LIKE $1
+        ;"#,
+        pad_name
     )
     .fetch_all(pool)
     .await?);
 }
 
 /// Finds commodities for a group of stations
-async fn get_all_commodities(stations: &Vec<Station>, pool: &Pool<Postgres>) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
+async fn get_all_commodities(
+    stations: &Vec<Station>,
+    pool: &Pool<Postgres>,
+) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
     let out: Arc<DashMap<i64, Vec<Commodity>>> = Arc::new(DashMap::new());
 
     let bar = Arc::new(ProgressBar::new(stations.len().try_into().unwrap()));
@@ -59,6 +72,7 @@ pub async fn compute_single(
     capital: u64,
     capacity: u32,
     sample_factor: f32,
+    landing_pad: LandingPad,
 ) -> Result<()> {
     info!("Setting up PostgreSQL pool on {}", url);
     let var_name = PgPoolOptions::new();
@@ -68,7 +82,7 @@ pub async fn compute_single(
         Some(source) => Ok(()),
         None => {
             info!("Fetching all stations");
-            let stations = get_all_stations(&pool).await?;
+            let stations = get_all_stations(&pool, landing_pad).await?;
 
             // the galaxy is very large, so randomly sample a number of stations
             let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
@@ -90,10 +104,17 @@ pub async fn compute_single(
                 .into_iter()
                 .choose_multiple(&mut rng, sample_size);
 
-            info!("Retrieving all commodities for {} sampled stations", sample.len());
+            info!(
+                "Retrieving all commodities for {} sampled stations",
+                sample.len()
+            );
             let all_commodities = get_all_commodities(&sample, &pool).await?;
 
-            info!("Computing trades for {} stations (approx {} individual routes)", sample.len(), sample.len().pow(2) - sample.len());
+            info!(
+                "Computing trades for {} stations (approx {} individual routes)",
+                sample.len(),
+                sample.len().pow(2) - sample.len()
+            );
             let bar = ProgressBar::new(sample.len().try_into().unwrap());
 
             sample.par_iter().for_each(|station1| {
@@ -109,7 +130,7 @@ pub async fn compute_single(
                         StationMarket::new(station1, &commodities1),
                         StationMarket::new(station2, &commodities2),
                         capacity,
-                        capital
+                        capital,
                     );
                 }
                 bar.inc(1);

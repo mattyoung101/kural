@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n            id, name, distance_to_arrival, market_id, system_id\n        FROM stations\n        WHERE\n            market_id IS NOT NULL and system_id IS NOT NULL\n        ;",
+  "query": "SELECT\n            id, name, distance_to_arrival, market_id, system_id\n        FROM stations\n        WHERE\n            market_id IS NOT NULL AND system_id IS NOT NULL AND landing_pad LIKE $1\n        ;",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -40,5 +42,5 @@
       true
     ]
   },
-  "hash": "e102743822699986bb0963f6e004136b73055fb4b6ec6f6f0aedde7e53a20b04"
+  "hash": "1c63dd1fbf9afba5c643b52ea4e96a83448c7e3dae994dba2d1616ebee18f49e"
 }

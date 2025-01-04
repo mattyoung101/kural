@@ -1,14 +1,15 @@
 use core::f32;
+use std::process::exit;
 
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
 use compute::compute_single;
-use log::info;
+use log::{error, info};
 
 pub mod compute;
 pub mod router;
-pub mod types;
 pub mod solve;
+pub mod types;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -20,6 +21,13 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct KuralCli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
+pub enum LandingPad {
+    Small,
+    Medium,
+    Large,
 }
 
 #[derive(Debug, Subcommand)]
@@ -60,6 +68,9 @@ enum Commands {
         /// For each station, this is the percent between 0.0 and 1.0 of other stations in the
         /// galaxy to randomly sample
         random_sample: f32,
+
+        #[arg(long)]
+        landing_pad: LandingPad,
     },
 
     /// Prints version information.
@@ -88,25 +99,23 @@ async fn main() -> Result<()> {
             max_jumps,
             capacity,
             random_sample,
+            landing_pad,
         } => {
-            info!(
-                "Computing single hop trade route {} with jump dist: {}, initial capital: {}, max jumps: {}, ship capacity: {}",
-                if let Some(ref x) = src {
-                    format!("from {}", x).to_string()
-                } else {
-                    "across the whole galaxy".to_string()
-                },
+            if random_sample <= 0.0 || random_sample > 1.0 {
+                error!("Illegal random_sample value");
+                exit(1);
+            }
+
+            compute_single(
+                url,
+                src.clone(),
                 jump,
                 capital,
-                if let Some(x) = max_jumps {
-                    x.to_string()
-                } else {
-                    "unspecified".to_string()
-                },
-                capacity
-            );
-
-            compute_single(url, src.clone(), jump, capital, capacity, random_sample).await?;
+                capacity,
+                random_sample,
+                landing_pad,
+            )
+            .await?;
 
             Ok(())
         }

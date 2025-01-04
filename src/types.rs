@@ -1,7 +1,4 @@
-use dashmap::DashMap;
 use geozero::wkb;
-use lazy_static::lazy_static;
-use ordered_float::{Float, OrderedFloat};
 use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
 use color_eyre::Result;
 
