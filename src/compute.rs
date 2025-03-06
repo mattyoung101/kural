@@ -4,12 +4,15 @@ use crate::LandingPad;
 use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressIterator};
+use lazy_static::lazy_static;
 use log::info;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 #[allow(unused_variables)]
@@ -40,7 +43,8 @@ async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Res
     .await?);
 }
 
-/// Finds commodities for a group of stations
+/// Finds commodities for a group of stations. The result is a map of IDs to the commodities at
+/// that station.
 async fn get_all_commodities(
     stations: &Vec<Station>,
     pool: &Pool<Postgres>,
@@ -62,6 +66,15 @@ async fn get_all_commodities(
         .await;
 
     return Ok(out);
+}
+
+lazy_static! {
+    static ref FLEET_CARRIER_REGEX: Regex = Regex::new("[a-zA-Z0-9]{3}-[a-zA-Z0-9]{3}").unwrap();
+}
+
+/// Returns true if the station name is a fleet carrier
+fn is_fleet_carrier(name: &String) -> bool {
+    return FLEET_CARRIER_REGEX.find(name).is_some();
 }
 
 /// Computes a single hop route
@@ -141,4 +154,89 @@ pub async fn compute_single(
             Ok(())
         }
     }
+}
+
+/// Finds cheapest commodities in the database
+pub async fn find_cheapest(
+    url: String,
+    landing_pad: LandingPad,
+    name: String,
+    max_age: u32,
+    min_quantity: u32,
+) -> Result<()> {
+    info!("Setting up PostgreSQL pool on {}", url);
+    let var_name = PgPoolOptions::new();
+    let pool = var_name.max_connections(32).connect(&url).await?;
+
+    info!("Fetching all stations");
+    let stations = get_all_stations(&pool, landing_pad).await?;
+
+    // ensure that we are only selecting stations that have a market and system attached to
+    // them
+    let filtered_stations: Vec<Station> = stations
+        .into_iter()
+        .filter(|station| {
+            station.market_id.is_some()
+                && station.system_id.is_some()
+                && !is_fleet_carrier(&station.name)
+        })
+        .collect();
+
+    info!(
+        "Retrieving all commodities for {} filtered stations",
+        filtered_stations.len()
+    );
+    let all_commodities = get_all_commodities(&filtered_stations, &pool).await?;
+
+    info!("Finding best values");
+    let mut best_station: Option<Station> = None;
+    let mut best_commodity: Option<Commodity> = None;
+    let now = Utc::now().naive_utc();
+    for station in filtered_stations.iter().progress() {
+        let commodities = all_commodities.get(&station.id).unwrap();
+
+        for commodity in commodities.iter() {
+            // apply filter criteria
+            let dur = now - commodity.listed_at;
+            if commodity.name != name
+                || commodity.stock < min_quantity.try_into()?
+                || dur.num_days() > max_age.into()
+            {
+                continue;
+            }
+
+            if best_commodity
+                .as_ref()
+                .is_none_or(|bc| commodity.sell_price < bc.sell_price)
+            {
+                best_station = Some(station.clone());
+                best_commodity = Some(commodity.clone());
+            }
+        }
+    }
+
+    info!("=== Best station ===");
+    match best_station {
+        Some(station) => {
+            let bc = best_commodity.unwrap();
+            let system = sqlx::query!(
+                r#"
+                SELECT name FROM systems WHERE id = $1;
+            "#,
+                station.system_id,
+            )
+            .fetch_one(&pool)
+            .await?;
+
+            info!(
+                "{} in {} has {} {} available for {} CR each (listed on {})",
+                station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
+            );
+        }
+        None => {}
+    }
+
+    // TODO show best 5 stations, not best station
+
+    Ok(())
 }

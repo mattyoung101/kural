@@ -60,10 +60,10 @@ pub fn solve_knapsack<'a>(
     //  c_i = cost of item i
     //  C = total available capital
 
-    let mut vars = ProblemVariables::new();
-    for commodity in profit.keys() {
-        vars.add(variable().min(0).max(max));
-    }
+    // let mut vars = ProblemVariables::new();
+    // for commodity in profit.keys() {
+    //     vars.add(variable().min(0).max(max));
+    // }
 
     // variables! {
     //     vars:

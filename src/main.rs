@@ -3,7 +3,7 @@ use std::process::exit;
 
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
-use compute::compute_single;
+use compute::{compute_single, find_cheapest};
 use log::{error, info};
 
 pub mod compute;
@@ -70,7 +70,31 @@ enum Commands {
         random_sample: f32,
 
         #[arg(long)]
+        /// Landing pad size
         landing_pad: LandingPad,
+    },
+
+    /// Finds the cheapest commodities. Does not consider player carriers in the search.
+    FindCheapest {
+        #[arg(long)]
+        /// EDTear Postgres connection URL. Recommended: postgres://postgres:password@localhost/edtear
+        url: String,
+
+        #[arg(long)]
+        /// Landing pad size
+        landing_pad: LandingPad,
+
+        #[arg(long)]
+        /// Name of the commodity to search for, e.g. "steel"
+        name: String,
+
+        #[arg(long)]
+        /// Max age of commodities to consider in days
+        max_age: u32,
+
+        #[arg(long)]
+        /// Minimum available quantity
+        min_quantity: u32,
     },
 
     /// Prints version information.
@@ -87,7 +111,7 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::Version {} => {
             println!("Kural v{VERSION}: High-performance Elite: Dangerous trade route calculator");
-            println!("Copyright (c) 2024 Matt Young. ISC Licence.");
+            println!("Copyright (c) 2024-2025 Matt Young. ISC Licence.");
             Ok(())
         }
 
@@ -119,5 +143,13 @@ async fn main() -> Result<()> {
 
             Ok(())
         }
+
+        Commands::FindCheapest {
+            url,
+            landing_pad,
+            name,
+            max_age,
+            min_quantity,
+        } => find_cheapest(url, landing_pad, name, max_age, min_quantity).await,
     }
 }

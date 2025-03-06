@@ -8,7 +8,7 @@ eddn = "0.1.0"
 clap = { version = "4.5.20", features = ["derive"] }
 env_logger = "0.11.5"
 log = "0.4.22"
-edsm-dumps-model = {git = "https://github.com/mattyoung101/edsm-dumps-model"}
+edsm-dumps-model = { version = "0.9.1" }
 # edsm-dumps-model = { path = "/home/matt/workspace/edsm-dumps-model" }
 # serde = { version = "1.0.216", features = ["derive"] }
 # serde_json = "1.0.133"
@@ -28,3 +28,4 @@ ordered-float = "4.6.0"
 lazy_static = "1.5.0"
 cached = { version = "0.54.0", features = ["async", "disk_store"] }
 rayon = "1.10.0"
+regex = "1.11.1"
