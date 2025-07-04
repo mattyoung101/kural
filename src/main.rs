@@ -1,9 +1,11 @@
 use core::f32;
 use std::process::exit;
 
+use ansi_term::Style;
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
 use compute::{compute_single, find_cheapest};
+use env_logger::{Builder, Env};
 use log::{error, info};
 
 pub mod compute;
@@ -105,12 +107,16 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = KuralCli::parse();
-    env_logger::init();
+    let env = Env::new().filter_or("RUST_LOG", "info");
+    Builder::from_env(env).init();
     color_eyre::install()?;
 
     match args.command {
         Commands::Version {} => {
-            println!("Kural v{VERSION}: High-performance Elite: Dangerous trade route calculator");
+            println!(
+                "Kural v{VERSION}: High-performance {} trade route calculator",
+                Style::new().italic().paint("Elite: Dangerous")
+            );
             println!("Copyright (c) 2024-2025 Matt Young. ISC Licence.");
             Ok(())
         }
