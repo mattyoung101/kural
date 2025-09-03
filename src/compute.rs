@@ -126,10 +126,13 @@ pub async fn compute_single(
             info!(
                 "Computing trades for {} stations (approx {} individual routes)",
                 sample.len(),
+                // this is because its stations^2 minus self intersecting routes (like going from
+                // A->A)
                 sample.len().pow(2) - sample.len()
             );
             let bar = ProgressBar::new(sample.len().try_into().unwrap());
 
+            // here we compare every station with every other station in the list
             sample.par_iter().for_each(|station1| {
                 let commodities1 = all_commodities.get(&station1.id).unwrap();
                 for station2 in &sample {

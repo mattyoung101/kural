@@ -1,8 +1,8 @@
-use good_lp::{constraint, highs, microlp, solvers::coin_cbc::{self, coin_cbc}, variable, variables, ProblemVariables};
+use good_lp::{constraint, highs, microlp, solvers::coin_cbc::{self, coin_cbc}, variable, variables, ProblemVariables, Variable};
 use log::info;
 use good_lp::SolverModel;
 use crate::types::{StationMarket, TradeSolution};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
 /// solution could be computed, otherwise None.
@@ -12,8 +12,10 @@ pub fn solve_knapsack<'a>(
     capacity: u32,
     capital: u64,
 ) -> Option<TradeSolution<'a>> {
-    // first, compute profit for all commodities from dest to source per item
-    let mut profit: HashMap<&String, i32> = HashMap::new();
+    // first, compute profit for all commodities from dest to source per unit carried
+    // this maps a commodity name to an expected profit
+    // we use a btreemap here for deterministic iteration order
+    let mut profit: BTreeMap<&String, i32> = BTreeMap::new();
     let all_dest_commodity_names: Vec<&String> = destination
         .commodities
         .into_iter()
@@ -60,7 +62,17 @@ pub fn solve_knapsack<'a>(
     //  c_i = cost of item i
     //  C = total available capital
 
-    // let mut vars = ProblemVariables::new();
+    let mut vars = ProblemVariables::new();
+    // n items
+    let n = profit.len();
+    let mut x: Vec<Variable> = Vec::with_capacity(n);
+
+    for com in profit.keys() {
+        // the max is the maximum number of items we can pick up in the source system
+        let max = source.get_commodity(com).unwrap().stock;
+        x.push(vars.add(variable().min(0).max(max)));
+    }
+
     // for commodity in profit.keys() {
     //     vars.add(variable().min(0).max(max));
     // }

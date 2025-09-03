@@ -36,7 +36,7 @@ pub enum LandingPad {
 enum Commands {
     /// Computes an optimal single-hop trade route.
     ///
-    /// A single-hop trade route only considers A->B for some A, B in the galaxy. It does not
+    /// A single-hop trade route only considers A->B for any A, B in the galaxy. It does not
     /// consider round trips like A->B->A, or multi-hop routes like A->B->C->etc. It can, however,
     /// be optionally tuned to generate valid routes using your ship's jump distance.
     ComputeSingle {

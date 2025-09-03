@@ -69,6 +69,7 @@ impl<'a> StationMarket<'a> {
 
     /// Finds the commodity in the market
     pub fn get_commodity(self: &Self, name: &String) -> Option<&Commodity> {
+        // FIXME we should look this up in a hashtable for perf; O(n) -> O(1)
         return self.commodities.into_iter().find(|commodity| *commodity.name == *name);
     }
 }
@@ -78,6 +79,8 @@ impl Station {
     pub async fn get_commodities(self: &Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
+        // FIXME we should build this into the database instead of querying it every time for perf
+        // like we should keep latest commodity in the database
         return sqlx::query_as!(Commodity,
             r#"
             WITH latest_listings AS (
