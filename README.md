@@ -20,6 +20,6 @@ first observation of supply and demand:
 ## Running
 
 ## Licence
-Copyright (c) 2024 Matt Young.
+Copyright (c) 2024-2025 M. Young.
 
 Kural is available under the ISC licence.
