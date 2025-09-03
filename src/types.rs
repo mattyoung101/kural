@@ -50,15 +50,17 @@ pub struct Order<'a> {
 #[derive(Debug, FromRow, Clone)]
 /// Solution to a knapsack problem
 pub struct TradeSolution<'a> {
+    /// Source station
+    source: &'a Station,
+    /// Destination station
+    destination: &'a Station,
     /// List of commodities to buy in the source system
     pub buy: Vec<Order<'a>>,
-    /// List of commodities to sell in the destination system
-    pub sell: Vec<Order<'a>>
 }
 
 impl<'a> TradeSolution<'a> {
-    pub fn new(buy: Vec<Order<'a>>, sell: Vec<Order<'a>>) -> Self {
-        Self { buy, sell }
+    pub fn new(source: &'a Station, destination: &'a Station, buy: Vec<Order<'a>>) -> Self {
+        Self { source, destination, buy }
     }
 }
 

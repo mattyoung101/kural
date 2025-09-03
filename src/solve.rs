@@ -1,7 +1,9 @@
-use good_lp::{constraint, highs, microlp, solvers::coin_cbc::{self, coin_cbc}, variable, variables, ProblemVariables, Variable};
-use log::info;
-use good_lp::SolverModel;
 use crate::types::{StationMarket, TradeSolution};
+use good_lp::{
+    constraint, highs, microlp, variable, variables, Expression, ProblemVariables, Variable,
+};
+use good_lp::{Solution, SolverModel};
+use log::{info, warn};
 use std::collections::{BTreeMap, HashMap};
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
@@ -42,16 +44,16 @@ pub fn solve_knapsack<'a>(
 
     // no routes available
     if profit.is_empty() {
-        return None
+        return None;
     }
 
     // now, model the bounded knapsack problem:
     //
     // maximise
     //          sum_(i=1)^n v_i x_i
-    // subject to
+    // subject to (cargo hold constraint)
     //          sum_(i=1)^n x_i <= W where x_i in {0, 1, 2, ..., t_i}
-    // subject to
+    // subject to (capital constraint)
     //          sum_(i=1)^n c_i x_i <= C
     //
     // where:
@@ -65,6 +67,7 @@ pub fn solve_knapsack<'a>(
     let mut vars = ProblemVariables::new();
     // n items
     let n = profit.len();
+    // this represents the number items
     let mut x: Vec<Variable> = Vec::with_capacity(n);
 
     for com in profit.keys() {
@@ -73,20 +76,43 @@ pub fn solve_knapsack<'a>(
         x.push(vars.add(variable().min(0).max(max)));
     }
 
-    // for commodity in profit.keys() {
-    //     vars.add(variable().min(0).max(max));
-    // }
+    // setup our objective which is sum_(i=1)^n v_i x_i
+    // i.e. quantity x profit
+    let mut objective = Expression::from(0.0);
+    for (i, prof) in profit.values().enumerate() {
+        objective += x[i] * *prof;
+    }
 
-    // variables! {
-    //     vars:
-    //            a <= 1;
-    //       2 <= b <= 4;
-    // } // variables can also be added dynamically
-    // let solution = vars.maximise(10 * (a - b / 5) - b)
-    //     .using(microlp) // multiple solvers available
-    //     .with(constraint!(a + 2 <= b))
-    //     .with(constraint!(1 + a >= 4 - b))
-    //     .solve().unwrap();
+    // setup the quantity and capital constraints
+    let mut quantity_expr = Expression::from(0.0);
+    let mut capital_expr = Expression::from(0.0);
+    for (i, com) in profit.keys().enumerate() {
+        quantity_expr += x[i];
+        capital_expr += x[i] * source.get_commodity(com).unwrap().buy_price;
+    }
 
-    return Some(TradeSolution::new(Vec::new(), Vec::new()));
+    let solution = vars
+        .maximise(&objective)
+        .using(microlp)
+        .with(constraint!(quantity_expr <= capacity))
+        .with(constraint!(capital_expr <= (capital as f64)))
+        .solve();
+
+    match solution {
+        Ok(sol) => {
+            info!(
+                "Computed {} -> {} with profit {}",
+                source.station.name,
+                destination.station.name,
+                sol.eval(&objective)
+            );
+
+            // FIXME extract solution vector
+            return Some(TradeSolution::new(source.station, destination.station, Vec::new()));
+        }
+        Err(err) => {
+            warn!("Could not solve: {}", err);
+            return None;
+        }
+    }
 }
