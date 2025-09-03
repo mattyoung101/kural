@@ -1,5 +1,5 @@
 use crate::types::{Order, StationMarket, TradeSolution};
-use good_lp::{constraint, microlp, variable, Expression, ProblemVariables, Variable};
+use good_lp::{constraint, highs, microlp, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
 use log::{debug, error, info};
 use std::collections::BTreeMap;
@@ -93,7 +93,7 @@ pub fn solve_knapsack<'a>(
 
     let solution = vars
         .maximise(&objective)
-        .using(microlp)
+        .using(highs)
         .with(constraint!(quantity_expr <= capacity))
         .with(constraint!(capital_expr <= (capital as f64)))
         .solve();

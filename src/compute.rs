@@ -114,7 +114,11 @@ pub async fn compute_single(
             // them
             let filtered_stations: Vec<Station> = stations
                 .iter()
-                .filter(|station| station.market_id.is_some() && station.system_id.is_some())
+                .filter(|station| {
+                    station.market_id.is_some()
+                        && station.system_id.is_some()
+                        && !is_fleet_carrier(&station.name)
+                })
                 .map(|station| station.clone())
                 .collect();
 

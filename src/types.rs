@@ -1,6 +1,8 @@
 use color_eyre::Result;
 use core::fmt;
 use geozero::wkb;
+use num_format::Locale;
+use num_format::ToFormattedString;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
@@ -86,7 +88,9 @@ impl TradeSolution {
     pub async fn dump_coloured(self: &Self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
             "➡️ For {} cr:\n    Travel to {} in {} and buy:\n",
-            self.profit.fg::<Green>(),
+            (self.profit.floor() as u64)
+                .to_formatted_string(&Locale::en)
+                .fg::<Green>(),
             self.source.name.fg::<Orange>(),
             self.source.get_system_name(pool).await.fg::<Orange>()
         );
@@ -96,7 +100,8 @@ impl TradeSolution {
             }
             str += &format!("        {}x {}\n", order.count, order.commodity_name).to_string();
         }
-        str += &format!("    Then, travel to {} in {} and sell.",
+        str += &format!(
+            "    Then, travel to {} in {} and sell.",
             self.destination.name.fg::<Orange>(),
             self.destination.get_system_name(pool).await.fg::<Orange>()
         );
@@ -147,42 +152,23 @@ impl Station {
     ) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
-        // FIXME we should build this into the database instead of querying it every time for perf
-        // like we should keep latest commodity in the database
         return sqlx::query_as!(
             Commodity,
             r#"
-            WITH latest_listings AS (
-                SELECT
-                    market_id,
-                    name,
-                    MAX(listed_at) AS latest_listed_at
-                FROM
-                    listings
-                WHERE
-                    market_id = $1
-                GROUP BY
-                    market_id, name
-            )
-            SELECT
-                l.market_id,
-                l.name,
-                l.mean_price,
-                l.buy_price,
-                l.sell_price,
-                l.demand,
-                l.demand_bracket,
-                l.stock,
-                l.stock_bracket,
-                l.listed_at
-            FROM
-                listings l
-            INNER JOIN
-                latest_listings ll
-            ON
-                l.market_id = ll.market_id
-                AND l.name = ll.name
-                AND l.listed_at = ll.latest_listed_at;
+                SELECT DISTINCT ON (l.name)
+                    l.market_id,
+                    l.name,
+                    l.mean_price,
+                    l.buy_price,
+                    l.sell_price,
+                    l.demand,
+                    l.demand_bracket,
+                    l.stock,
+                    l.stock_bracket,
+                    l.listed_at
+                FROM listings l
+                WHERE l.market_id = $1
+                ORDER BY l.name, l.listed_at DESC;
             "#,
             self.market_id.unwrap()
         )

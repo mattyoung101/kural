@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH latest_listings AS (\n                SELECT\n                    market_id,\n                    name,\n                    MAX(listed_at) AS latest_listed_at\n                FROM\n                    listings\n                WHERE\n                    market_id = $1\n                GROUP BY\n                    market_id, name\n            )\n            SELECT\n                l.market_id,\n                l.name,\n                l.mean_price,\n                l.buy_price,\n                l.sell_price,\n                l.demand,\n                l.demand_bracket,\n                l.stock,\n                l.stock_bracket,\n                l.listed_at\n            FROM\n                listings l\n            INNER JOIN\n                latest_listings ll\n            ON\n                l.market_id = ll.market_id\n                AND l.name = ll.name\n                AND l.listed_at = ll.latest_listed_at;\n            ",
+  "query": "\n                SELECT DISTINCT ON (l.name)\n                    l.market_id,\n                    l.name,\n                    l.mean_price,\n                    l.buy_price,\n                    l.sell_price,\n                    l.demand,\n                    l.demand_bracket,\n                    l.stock,\n                    l.stock_bracket,\n                    l.listed_at\n                FROM listings l\n                WHERE l.market_id = $1\n                ORDER BY l.name, l.listed_at DESC;\n            ",
   "describe": {
     "columns": [
       {
@@ -72,5 +72,5 @@
       false
     ]
   },
-  "hash": "7e535a9c61fa0fc57a5e5ce06e486329dee10512b82a86747af612d43c129c44"
+  "hash": "cbea5b8212e3d9fc5d7352aaf045b66953e3eb511e1fea29b498fa8b74072085"
 }
