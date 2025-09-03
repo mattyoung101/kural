@@ -14,7 +14,7 @@ use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 #[allow(unused_variables)]
 
 /// Gets a list of all stations
@@ -108,20 +108,21 @@ pub async fn compute_single(
             // ensure that we are only selecting stations that have a market and system attached to
             // them
             let filtered_stations: Vec<Station> = stations
-                .into_iter()
+                .iter()
                 .filter(|station| station.market_id.is_some() && station.system_id.is_some())
+                .map(|it| *it)
                 .collect();
 
             // now we can compute the random subsample
             let sample = filtered_stations
-                .into_iter()
+                .iter()
                 .choose_multiple(&mut rng, sample_size);
 
             info!(
                 "Retrieving all commodities for {} sampled stations",
                 sample.len()
             );
-            let all_commodities = get_all_commodities(&sample, &pool).await?;
+            let all_commodities = get_all_commodities(sample, &pool).await?;
 
             info!(
                 "Computing trades for {} stations (approx {} individual routes)",
@@ -130,35 +131,39 @@ pub async fn compute_single(
                 // A->A)
                 sample.len().pow(2) - sample.len()
             );
-            let bar = ProgressBar::new(sample.len().try_into().unwrap());
 
-            let mut all_solutions: Vec<TradeSolution> = Vec::new();
+            let bar = Arc::new(ProgressBar::new((*&stations.len()).try_into().unwrap()));
+            let mut all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
 
             // here we compare every station with every other station in the list
-            sample.par_iter().for_each(|station1| {
-                let commodities1 = all_commodities.get(&station1.id).unwrap();
-                for station2 in &sample {
-                    // skip self
-                    if station2.id == station1.id {
-                        continue;
+            sample.clone().par_iter().for_each(|station1| {
+                let bar = bar.clone();
+                {
+                    let commodities1 = all_commodities.get(&station1.id).unwrap();
+                    for station2 in &sample {
+                        // skip self
+                        if station2.id == station1.id {
+                            continue;
+                        }
+                        let commodities2 = all_commodities.get(&station2.id).unwrap();
+
+                        let solution = solve_knapsack(
+                            StationMarket::new(station1, &commodities1),
+                            StationMarket::new(station2, &commodities2),
+                            capacity,
+                            capital,
+                        );
+
+                        if let Some(sol) = solution {
+                            let mut access = all_solutions.lock().unwrap();
+                            access.push(sol.clone());
+                        }
                     }
-                    let commodities2 = all_commodities.get(&station2.id).unwrap();
-
-                    let solution = solve_knapsack(
-                        StationMarket::new(station1, &commodities1),
-                        StationMarket::new(station2, &commodities2),
-                        capacity,
-                        capital,
-                    );
-
-                    // if let Some(sol) = solution {
-                    //     all_solutions.push(sol.clone());
-                    // }
+                    bar.clone().inc(1);
                 }
-                bar.inc(1);
             });
 
-            bar.finish();
+            bar.clone().finish();
 
             Ok(())
         }
