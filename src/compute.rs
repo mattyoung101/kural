@@ -110,19 +110,23 @@ pub async fn compute_single(
             let filtered_stations: Vec<Station> = stations
                 .iter()
                 .filter(|station| station.market_id.is_some() && station.system_id.is_some())
-                .map(|it| *it)
+                .map(|station| station.clone())
                 .collect();
 
             // now we can compute the random subsample
-            let sample = filtered_stations
+            let sample: Vec<Station> = filtered_stations
                 .iter()
-                .choose_multiple(&mut rng, sample_size);
+                .choose_multiple(&mut rng, sample_size)
+                .iter()
+                // FIXME horrendous cloning
+                .map(|it| (*it).clone())
+                .collect();
 
             info!(
                 "Retrieving all commodities for {} sampled stations",
                 sample.len()
             );
-            let all_commodities = get_all_commodities(sample, &pool).await?;
+            let all_commodities = get_all_commodities(&sample, &pool).await?;
 
             info!(
                 "Computing trades for {} stations (approx {} individual routes)",
@@ -138,18 +142,18 @@ pub async fn compute_single(
             // here we compare every station with every other station in the list
             sample.clone().par_iter().for_each(|station1| {
                 let bar = bar.clone();
+                let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
                 {
-                    let commodities1 = all_commodities.get(&station1.id).unwrap();
                     for station2 in &sample {
                         // skip self
                         if station2.id == station1.id {
                             continue;
                         }
-                        let commodities2 = all_commodities.get(&station2.id).unwrap();
+                        let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
 
                         let solution = solve_knapsack(
-                            StationMarket::new(station1, &commodities1),
-                            StationMarket::new(station2, &commodities2),
+                            StationMarket::new(station1.clone(), commodities1.clone()),
+                            StationMarket::new(station2.clone(), commodities2.clone()),
                             capacity,
                             capital,
                         );

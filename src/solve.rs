@@ -7,24 +7,24 @@ use std::collections::BTreeMap;
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
 /// solution could be computed, otherwise None.
 pub fn solve_knapsack<'a>(
-    source: StationMarket<'a>,
-    destination: StationMarket<'a>,
+    source: StationMarket,
+    destination: StationMarket,
     capacity: u32,
     capital: u64,
-) -> Option<TradeSolution<'a>> {
+) -> Option<TradeSolution> {
     // FIXME we *need* to stop unwrappping shit in this routine
 
     // first, compute profit for all commodities from dest to source per unit carried
     // this maps a commodity name to an expected profit
     // we use a btreemap here for deterministic iteration order
-    let mut profit: BTreeMap<&String, i32> = BTreeMap::new();
-    let all_dest_commodity_names: Vec<&String> = destination
+    let mut profit: BTreeMap<String, i32> = BTreeMap::new();
+    let all_dest_commodity_names: Vec<String> = destination
         .commodities
-        .into_iter()
-        .map(|commodity| &commodity.name)
+        .iter()
+        .map(|commodity| commodity.name.clone())
         .collect();
 
-    for commodity in source.commodities {
+    for commodity in &source.commodities {
         // check that this commodity is present in the destination
         if !all_dest_commodity_names.contains(&&commodity.name) {
             continue;
@@ -37,7 +37,7 @@ pub fn solve_knapsack<'a>(
         }
 
         profit.insert(
-            &commodity.name,
+            commodity.name.clone(),
             dest_commodity.unwrap().sell_price - commodity.buy_price,
         );
     }
@@ -103,9 +103,7 @@ pub fn solve_knapsack<'a>(
             let profit = sol.eval(&objective);
             info!(
                 "Computed {} -> {} with profit {}",
-                source.station.name,
-                destination.station.name,
-                profit
+                source.station.name, destination.station.name, profit
             );
 
             // the ILP solver will tell us how many of each commodity to order
@@ -114,7 +112,7 @@ pub fn solve_knapsack<'a>(
                 .enumerate()
                 .map(|(idx, var)| {
                     Order::new(
-                        &source.commodities[idx].name,
+                        source.commodities[idx].name.clone(),
                         // FIXME we may be stupid -> .floor() as u32 is kind of dumb
                         // why is our ILP solve returning float valued constraints anyway?
                         sol.value(*var).floor() as u32,
@@ -126,7 +124,7 @@ pub fn solve_knapsack<'a>(
                 source.station,
                 destination.station,
                 orders,
-                profit
+                profit,
             ));
         }
         Err(err) => {

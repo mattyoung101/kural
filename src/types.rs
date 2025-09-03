@@ -35,52 +35,52 @@ pub struct Commodity {
 
 /// A station with an attached market
 #[derive(Debug, Clone)]
-pub struct StationMarket<'a> {
-    pub station: &'a Station,
-    pub commodities: &'a Vec<Commodity>
+pub struct StationMarket {
+    pub station: Station,
+    pub commodities: Vec<Commodity>
 }
 
 #[derive(Debug, FromRow, Clone)]
 /// Order of commodities to buy or sell in a system
-pub struct Order<'a> {
-    pub commodity_name: &'a String,
+pub struct Order {
+    pub commodity_name: String,
     pub count: u32
 }
 
-impl<'a> Order<'a> {
-    pub fn new(commodity_name: &'a String, count: u32) -> Self {
+impl Order {
+    pub fn new(commodity_name: String, count: u32) -> Self {
         Self { commodity_name, count }
     }
 }
 
 #[derive(Debug, FromRow, Clone)]
 /// Solution to a knapsack problem
-pub struct TradeSolution<'a> {
+pub struct TradeSolution {
     /// Source station
-    pub source: &'a Station,
+    pub source: Station,
     /// Destination station
-    pub destination: &'a Station,
+    pub destination: Station,
     /// List of commodities to buy in the source system
-    pub buy: Vec<Order<'a>>,
+    pub buy: Vec<Order>,
     /// Profit expected
     pub profit: f64
 }
 
-impl<'a> TradeSolution<'a> {
-    pub fn new(source: &'a Station, destination: &'a Station, buy: Vec<Order<'a>>, profit: f64) -> Self {
+impl TradeSolution {
+    pub fn new(source: Station, destination: Station, buy: Vec<Order>, profit: f64) -> Self {
         Self { source, destination, buy, profit }
     }
 }
 
-impl<'a> StationMarket<'a> {
-    pub fn new(station: &'a Station, commodities: &'a Vec<Commodity>) -> Self {
+impl StationMarket {
+    pub fn new(station: Station, commodities: Vec<Commodity>) -> Self {
         Self { station, commodities }
     }
 
     /// Finds the commodity in the market
-    pub fn get_commodity(self: &Self, name: &String) -> Option<&Commodity> {
+    pub fn get_commodity(self: &Self, name: &String) -> Option<Commodity> {
         // FIXME we should look this up in a hashtable for perf; O(n) -> O(1)
-        return self.commodities.into_iter().find(|commodity| *commodity.name == *name);
+        return self.commodities.iter().find(|commodity| *commodity.name == *name).cloned();
     }
 }
 
