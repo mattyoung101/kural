@@ -1,12 +1,13 @@
+use chrono::Utc;
 use color_eyre::Result;
-use core::fmt;
 use geozero::wkb;
-use num_format::Locale;
-use num_format::ToFormattedString;
+use log::info;
+use owo_colors::colors::css::DarkOrange;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
 use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
+use thousands::Separable;
 
 #[derive(Debug, FromRow)]
 pub struct System {
@@ -73,26 +74,35 @@ pub struct TradeSolution {
     pub buy: Vec<Order>,
     /// Profit expected
     pub profit: f64,
+    /// Cost to execute the trade
+    pub cost: f64,
 }
 
 impl TradeSolution {
-    pub fn new(source: Station, destination: Station, buy: Vec<Order>, profit: f64) -> Self {
+    pub fn new(
+        source: Station,
+        destination: Station,
+        buy: Vec<Order>,
+        profit: f64,
+        cost: f64,
+    ) -> Self {
         Self {
             source,
             destination,
             buy,
             profit,
+            cost,
         }
     }
 
     pub async fn dump_coloured(self: &Self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
-            "➡️ For {} cr:\n    Travel to {} in {} and buy:\n",
-            (self.profit.floor() as u64)
-                .to_formatted_string(&Locale::en)
-                .fg::<Green>(),
+            "➡️ For {} CR profit:\n    Travel to {} in {} and buy (for {} CR):\n",
+            self.profit.separate_with_commas().fg::<Green>(),
             self.source.name.fg::<Orange>(),
-            self.source.get_system_name(pool).await.fg::<Orange>()
+            self.source.get_system_name(pool).await.fg::<Orange>(),
+            // often we just get like .000006, so ignore it for the buy cost
+            self.cost.round().separate_with_commas().fg::<Red>(),
         );
         for order in &self.buy {
             if order.count == 0 {
@@ -101,10 +111,25 @@ impl TradeSolution {
             str += &format!("        {}x {}\n", order.count, order.commodity_name).to_string();
         }
         str += &format!(
-            "    Then, travel to {} in {} and sell.",
+            "    Then, travel to {} in {} and sell.\n",
             self.destination.name.fg::<Orange>(),
             self.destination.get_system_name(pool).await.fg::<Orange>()
         );
+
+        let newest_update = self
+            .source
+            .get_commodities(pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .max_by_key(|x| x.listed_at)
+            .unwrap()
+            .listed_at;
+
+        // I may be stupid but I can't understand for the life of me why this subtraction is not
+        // the other way around - shouldn't it be (now - newest_update)? oh well
+        let dur = chrono_humanize::HumanTime::from(newest_update - Utc::now().naive_utc());
+        str += &format!("    (Data most recently updated {})", dur.fg::<DarkOrange>());
 
         return str;
     }

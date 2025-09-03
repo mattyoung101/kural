@@ -183,11 +183,10 @@ pub async fn compute_single(
                 .sorted_by_key(|x| OrderedFloat(x.profit))
                 .rev()
                 .collect();
-            // let best_solution = solutions.clone().sort_by_key(|x| OrderedFloat(x.profit));
 
             println!("{}", "✨ Most optimal trades:".bold().fg::<Green>());
             for (i, trade) in best_solutions.iter().take(5).enumerate() {
-                println!("{i}. {}", trade.dump_coloured(&pool).await);
+                println!("{}. {}", i + 1, trade.dump_coloured(&pool).await);
                 println!("");
             }
 

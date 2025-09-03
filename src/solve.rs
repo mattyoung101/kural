@@ -1,7 +1,7 @@
 use crate::types::{Order, StationMarket, TradeSolution};
-use good_lp::{constraint, highs, microlp, variable, Expression, ProblemVariables, Variable};
+use good_lp::{constraint, highs, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
-use log::{debug, error, info};
+use log::{debug, error};
 use std::collections::BTreeMap;
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
@@ -95,12 +95,13 @@ pub fn solve_knapsack<'a>(
         .maximise(&objective)
         .using(highs)
         .with(constraint!(quantity_expr <= capacity))
-        .with(constraint!(capital_expr <= (capital as f64)))
+        .with(constraint!(capital_expr.clone() <= (capital as f64)))
         .solve();
 
     match solution {
         Ok(sol) => {
             let profit = sol.eval(&objective);
+            let cost = sol.eval(&capital_expr.clone());
             debug!(
                 "Computed {} -> {} with profit {}",
                 source.station.name, destination.station.name, profit
@@ -125,6 +126,7 @@ pub fn solve_knapsack<'a>(
                 destination.station,
                 orders,
                 profit,
+                cost,
             ));
         }
         Err(err) => {
