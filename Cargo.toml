@@ -3,6 +3,9 @@ name = "kural"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+debug = "line-tables-only"
+
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
 env_logger = "0.11.5"
@@ -29,3 +32,4 @@ cached = { version = "0.54.0", features = ["async", "disk_store"] }
 rayon = "1.10.0"
 regex = "1.11.1"
 ansi_term = "0.12.1"
+owo-colors = "4.2.2"

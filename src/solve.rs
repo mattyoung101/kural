@@ -1,7 +1,7 @@
 use crate::types::{Order, StationMarket, TradeSolution};
 use good_lp::{constraint, microlp, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
-use log::{error, info};
+use log::{debug, error, info};
 use std::collections::BTreeMap;
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
@@ -73,7 +73,7 @@ pub fn solve_knapsack<'a>(
     for com in profit.keys() {
         // the max is the maximum number of items we can pick up in the source system
         let max = source.get_commodity(com).unwrap().stock;
-        x.push(vars.add(variable().min(0).max(max)));
+        x.push(vars.add(variable().min(0).max(max).integer()));
     }
 
     // setup our objective which is sum_(i=1)^n v_i x_i
@@ -101,7 +101,7 @@ pub fn solve_knapsack<'a>(
     match solution {
         Ok(sol) => {
             let profit = sol.eval(&objective);
-            info!(
+            debug!(
                 "Computed {} -> {} with profit {}",
                 source.station.name, destination.station.name, profit
             );

@@ -1738,6 +1738,7 @@ dependencies = [
  "lazy_static",
  "log",
  "ordered-float",
+ "owo-colors",
  "rand 0.8.5",
  "rayon",
  "regex",

@@ -1,6 +1,10 @@
-use geozero::wkb;
-use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
 use color_eyre::Result;
+use core::fmt;
+use geozero::wkb;
+use owo_colors::colors::css::Orange;
+use owo_colors::colors::*;
+use owo_colors::OwoColorize;
+use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
 
 #[derive(Debug, FromRow)]
 pub struct System {
@@ -37,19 +41,22 @@ pub struct Commodity {
 #[derive(Debug, Clone)]
 pub struct StationMarket {
     pub station: Station,
-    pub commodities: Vec<Commodity>
+    pub commodities: Vec<Commodity>,
 }
 
 #[derive(Debug, FromRow, Clone)]
 /// Order of commodities to buy or sell in a system
 pub struct Order {
     pub commodity_name: String,
-    pub count: u32
+    pub count: u32,
 }
 
 impl Order {
     pub fn new(commodity_name: String, count: u32) -> Self {
-        Self { commodity_name, count }
+        Self {
+            commodity_name,
+            count,
+        }
     }
 }
 
@@ -63,35 +70,87 @@ pub struct TradeSolution {
     /// List of commodities to buy in the source system
     pub buy: Vec<Order>,
     /// Profit expected
-    pub profit: f64
+    pub profit: f64,
 }
 
 impl TradeSolution {
     pub fn new(source: Station, destination: Station, buy: Vec<Order>, profit: f64) -> Self {
-        Self { source, destination, buy, profit }
+        Self {
+            source,
+            destination,
+            buy,
+            profit,
+        }
+    }
+
+    pub async fn dump_coloured(self: &Self, pool: &Pool<Postgres>) -> String {
+        let mut str = format!(
+            "➡️ For {} cr:\n    Travel to {} in {} and buy:\n",
+            self.profit.fg::<Green>(),
+            self.source.name.fg::<Orange>(),
+            self.source.get_system_name(pool).await.fg::<Orange>()
+        );
+        for order in &self.buy {
+            if order.count == 0 {
+                continue;
+            }
+            str += &format!("        {}x {}\n", order.count, order.commodity_name).to_string();
+        }
+        str += &format!("    Then, travel to {} in {} and sell.",
+            self.destination.name.fg::<Orange>(),
+            self.destination.get_system_name(pool).await.fg::<Orange>()
+        );
+
+        return str;
     }
 }
 
 impl StationMarket {
     pub fn new(station: Station, commodities: Vec<Commodity>) -> Self {
-        Self { station, commodities }
+        Self {
+            station,
+            commodities,
+        }
     }
 
     /// Finds the commodity in the market
     pub fn get_commodity(self: &Self, name: &String) -> Option<Commodity> {
         // FIXME we should look this up in a hashtable for perf; O(n) -> O(1)
-        return self.commodities.iter().find(|commodity| *commodity.name == *name).cloned();
+        return self
+            .commodities
+            .iter()
+            .find(|commodity| *commodity.name == *name)
+            .cloned();
     }
 }
 
 impl Station {
+    pub async fn get_system_name(self: &Station, pool: &Pool<Postgres>) -> String {
+        return sqlx::query!(
+            r#"
+            SELECT name
+            FROM systems
+            WHERE id = $1;
+            "#,
+            self.system_id
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .name;
+    }
+
     /// Gets the commodities in this station, assuming it has a market
-    pub async fn get_commodities(self: &Station, pool: &Pool<Postgres>) -> Result<Vec<Commodity>, sqlx::Error> {
+    pub async fn get_commodities(
+        self: &Station,
+        pool: &Pool<Postgres>,
+    ) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
         // FIXME we should build this into the database instead of querying it every time for perf
         // like we should keep latest commodity in the database
-        return sqlx::query_as!(Commodity,
+        return sqlx::query_as!(
+            Commodity,
             r#"
             WITH latest_listings AS (
                 SELECT
@@ -124,7 +183,10 @@ impl Station {
                 l.market_id = ll.market_id
                 AND l.name = ll.name
                 AND l.listed_at = ll.latest_listed_at;
-            "#, self.market_id.unwrap())
-        .fetch_all(pool).await;
+            "#,
+            self.market_id.unwrap()
+        )
+        .fetch_all(pool)
+        .await;
     }
 }

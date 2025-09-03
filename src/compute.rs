@@ -5,8 +5,12 @@ use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressIterator};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::info;
+use ordered_float::OrderedFloat;
+use owo_colors::colors::*;
+use owo_colors::OwoColorize;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
@@ -15,6 +19,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
 use std::sync::{Arc, Mutex};
+
 #[allow(unused_variables)]
 
 /// Gets a list of all stations
@@ -118,7 +123,6 @@ pub async fn compute_single(
                 .iter()
                 .choose_multiple(&mut rng, sample_size)
                 .iter()
-                // FIXME horrendous cloning
                 .map(|it| (*it).clone())
                 .collect();
 
@@ -136,8 +140,8 @@ pub async fn compute_single(
                 sample.len().pow(2) - sample.len()
             );
 
-            let bar = Arc::new(ProgressBar::new((*&stations.len()).try_into().unwrap()));
-            let mut all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
+            let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
+            let all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
 
             // here we compare every station with every other station in the list
             sample.clone().par_iter().for_each(|station1| {
@@ -168,6 +172,20 @@ pub async fn compute_single(
             });
 
             bar.clone().finish();
+
+            let solutions = all_solutions.lock().unwrap();
+            let best_solutions: Vec<&TradeSolution> = solutions
+                .iter()
+                .sorted_by_key(|x| OrderedFloat(x.profit))
+                .rev()
+                .collect();
+            // let best_solution = solutions.clone().sort_by_key(|x| OrderedFloat(x.profit));
+
+            println!("{}", "✨ Most optimal trades:".bold().fg::<Green>());
+            for (i, trade) in best_solutions.iter().take(5).enumerate() {
+                println!("{i}. {}", trade.dump_coloured(&pool).await);
+                println!("");
+            }
 
             Ok(())
         }
