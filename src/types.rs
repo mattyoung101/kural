@@ -43,24 +43,32 @@ pub struct StationMarket<'a> {
 #[derive(Debug, FromRow, Clone)]
 /// Order of commodities to buy or sell in a system
 pub struct Order<'a> {
-    pub commodity: &'a Commodity,
+    pub commodity_name: &'a String,
     pub count: u32
+}
+
+impl<'a> Order<'a> {
+    pub fn new(commodity_name: &'a String, count: u32) -> Self {
+        Self { commodity_name, count }
+    }
 }
 
 #[derive(Debug, FromRow, Clone)]
 /// Solution to a knapsack problem
 pub struct TradeSolution<'a> {
     /// Source station
-    source: &'a Station,
+    pub source: &'a Station,
     /// Destination station
-    destination: &'a Station,
+    pub destination: &'a Station,
     /// List of commodities to buy in the source system
     pub buy: Vec<Order<'a>>,
+    /// Profit expected
+    pub profit: f64
 }
 
 impl<'a> TradeSolution<'a> {
-    pub fn new(source: &'a Station, destination: &'a Station, buy: Vec<Order<'a>>) -> Self {
-        Self { source, destination, buy }
+    pub fn new(source: &'a Station, destination: &'a Station, buy: Vec<Order<'a>>, profit: f64) -> Self {
+        Self { source, destination, buy, profit }
     }
 }
 

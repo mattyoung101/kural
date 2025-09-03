@@ -1,5 +1,5 @@
 use crate::solve::solve_knapsack;
-use crate::types::{Commodity, Station, StationMarket};
+use crate::types::{Commodity, Station, StationMarket, TradeSolution};
 use crate::LandingPad;
 use color_eyre::Result;
 use dashmap::DashMap;
@@ -132,6 +132,8 @@ pub async fn compute_single(
             );
             let bar = ProgressBar::new(sample.len().try_into().unwrap());
 
+            let mut all_solutions: Vec<TradeSolution> = Vec::new();
+
             // here we compare every station with every other station in the list
             sample.par_iter().for_each(|station1| {
                 let commodities1 = all_commodities.get(&station1.id).unwrap();
@@ -148,6 +150,10 @@ pub async fn compute_single(
                         capacity,
                         capital,
                     );
+
+                    // if let Some(sol) = solution {
+                    //     all_solutions.push(sol.clone());
+                    // }
                 }
                 bar.inc(1);
             });

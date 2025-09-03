@@ -1,10 +1,8 @@
-use crate::types::{StationMarket, TradeSolution};
-use good_lp::{
-    constraint, highs, microlp, variable, variables, Expression, ProblemVariables, Variable,
-};
+use crate::types::{Order, StationMarket, TradeSolution};
+use good_lp::{constraint, microlp, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
-use log::{info, warn};
-use std::collections::{BTreeMap, HashMap};
+use log::{error, info};
+use std::collections::BTreeMap;
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
 /// solution could be computed, otherwise None.
@@ -14,6 +12,8 @@ pub fn solve_knapsack<'a>(
     capacity: u32,
     capital: u64,
 ) -> Option<TradeSolution<'a>> {
+    // FIXME we *need* to stop unwrappping shit in this routine
+
     // first, compute profit for all commodities from dest to source per unit carried
     // this maps a commodity name to an expected profit
     // we use a btreemap here for deterministic iteration order
@@ -100,18 +100,40 @@ pub fn solve_knapsack<'a>(
 
     match solution {
         Ok(sol) => {
+            let profit = sol.eval(&objective);
             info!(
                 "Computed {} -> {} with profit {}",
                 source.station.name,
                 destination.station.name,
-                sol.eval(&objective)
+                profit
             );
 
-            // FIXME extract solution vector
-            return Some(TradeSolution::new(source.station, destination.station, Vec::new()));
+            // the ILP solver will tell us how many of each commodity to order
+            let orders: Vec<Order> = x
+                .iter()
+                .enumerate()
+                .map(|(idx, var)| {
+                    Order::new(
+                        &source.commodities[idx].name,
+                        // FIXME we may be stupid -> .floor() as u32 is kind of dumb
+                        // why is our ILP solve returning float valued constraints anyway?
+                        sol.value(*var).floor() as u32,
+                    )
+                })
+                .collect();
+
+            return Some(TradeSolution::new(
+                source.station,
+                destination.station,
+                orders,
+                profit
+            ));
         }
         Err(err) => {
-            warn!("Could not solve: {}", err);
+            error!(
+                "Could not solve {} -> {}: {}",
+                source.station.name, destination.station.name, err
+            );
             return None;
         }
     }
