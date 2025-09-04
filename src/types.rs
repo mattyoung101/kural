@@ -1,5 +1,6 @@
 use chrono::Utc;
 use color_eyre::Result;
+use count_digits::CountDigits;
 use geozero::wkb;
 use owo_colors::colors::css::DarkOrange;
 use owo_colors::colors::css::Orange;
@@ -97,7 +98,7 @@ impl TradeSolution {
     pub async fn dump_coloured(&self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
             "➡️ For {} CR profit:\n    Travel to {} in {} and buy (for {} CR):\n",
-            self.profit.separate_with_commas().fg::<Green>(),
+            self.profit.round().separate_with_commas().fg::<Green>(),
             self.source.name.fg::<Orange>(),
             self.source.get_system_name(pool).await.fg::<Orange>(),
             // often we just get like .000006, so ignore it for the buy cost
@@ -117,11 +118,14 @@ impl TradeSolution {
                 .unwrap()
                 .listed_at;
             let dur = chrono_humanize::HumanTime::from(update - Utc::now().naive_utc());
-            let spacing = 16 - order.commodity_name.len() + 4;
+            let spacing = 32 - order.commodity_name.len() + 4;
+
+            let digit_spacing = 4 - order.count.count_digits() + 1;
 
             str += &format!(
-                "        {}x {}{}(updated {})\n",
+                "        {}x{}{}{}(updated {})\n",
                 order.count,
+                " ".repeat(digit_spacing),
                 order.commodity_name,
                 " ".repeat(spacing),
                 dur.fg::<DarkOrange>()
@@ -133,24 +137,6 @@ impl TradeSolution {
             self.destination.name.fg::<Orange>(),
             self.destination.get_system_name(pool).await.fg::<Orange>()
         );
-
-        // let newest_update = self
-        //     .source
-        //     .get_commodities(pool)
-        //     .await
-        //     .unwrap()
-        //     .into_iter()
-        //     .max_by_key(|x| x.listed_at)
-        //     .unwrap()
-        //     .listed_at;
-        //
-        // // I may be stupid but I can't understand for the life of me why this subtraction is not
-        // // the other way around - shouldn't it be (now - newest_update)? oh well
-        // let dur = chrono_humanize::HumanTime::from(newest_update - Utc::now().naive_utc());
-        // str += &format!(
-        //     "    (Data most recently updated {})",
-        //     dur.fg::<DarkOrange>()
-        // );
 
         str
     }

@@ -76,6 +76,10 @@ enum Commands {
         #[arg(long)]
         /// Landing pad size
         landing_pad: LandingPad,
+
+        // #[arg(long)]
+        // /// Maximum days that a commodity may have been last updated in, in order to be considered
+        // expiry: Option<u32>,
     },
 
     /// Finds the cheapest commodities. Does not consider player carriers in the search.
