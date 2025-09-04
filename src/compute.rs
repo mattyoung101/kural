@@ -1,6 +1,7 @@
 use crate::solve::solve_knapsack;
 use crate::types::{Commodity, Station, StationMarket, TradeSolution};
 use crate::LandingPad;
+use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
@@ -54,6 +55,7 @@ async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Res
 async fn get_all_commodities(
     stations: &[Station],
     pool: &Pool<Postgres>,
+    date_cutoff: &NaiveDateTime,
 ) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
     let out: Arc<DashMap<i64, Vec<Commodity>>> = Arc::new(DashMap::new());
 
@@ -65,7 +67,7 @@ async fn get_all_commodities(
             let out = out.clone();
             async move {
                 bar.inc(1);
-                let commodities = station1.get_commodities(&pool).await.unwrap();
+                let commodities = station1.get_commodities(&pool, date_cutoff).await.unwrap();
                 out.insert(station1.id, commodities);
             }
         })
@@ -92,10 +94,17 @@ pub async fn compute_single(
     capacity: u32,
     sample_factor: f32,
     landing_pad: LandingPad,
+    expiry: Option<u32>,
 ) -> Result<()> {
     println!("Setting up PostgreSQL pool on {}", url.fg::<Orange>());
     let var_name = PgPoolOptions::new();
     let pool = var_name.max_connections(32).connect(&url).await?;
+
+    // compute date cutoff: if expiry is set, use now - expiry; otherwise use 1970-01-01
+    let date_cutoff = match expiry {
+        Some(exp) => (Utc::now() - TimeDelta::days(exp.into())).naive_utc(),
+        None => NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().into(),
+    };
 
     match src {
         Some(source) => Ok(()),
@@ -136,7 +145,7 @@ pub async fn compute_single(
                 "Retrieving all commodities for {} sampled stations",
                 sample.len().fg::<Orange>()
             );
-            let all_commodities = get_all_commodities(&sample, &pool).await?;
+            let all_commodities = get_all_commodities(&sample, &pool, &date_cutoff).await?;
 
             println!(
                 "Computing trades for {} stations (approx {} individual routes)",
@@ -205,76 +214,76 @@ pub async fn find_cheapest(
     max_age: u32,
     min_quantity: u32,
 ) -> Result<()> {
-    info!("Setting up PostgreSQL pool on {url}");
-    let var_name = PgPoolOptions::new();
-    let pool = var_name.max_connections(32).connect(&url).await?;
-
-    info!("Fetching all stations");
-    let stations = get_all_stations(&pool, landing_pad).await?;
-
-    // ensure that we are only selecting stations that have a market and system attached to
-    // them
-    let filtered_stations: Vec<Station> = stations
-        .into_iter()
-        .filter(|station| {
-            station.market_id.is_some()
-                && station.system_id.is_some()
-                && !is_fleet_carrier(&station.name)
-        })
-        .collect();
-
-    info!(
-        "Retrieving all commodities for {} filtered stations",
-        filtered_stations.len()
-    );
-    let all_commodities = get_all_commodities(&filtered_stations, &pool).await?;
-
-    info!("Finding best values");
-    let mut best_station: Option<Station> = None;
-    let mut best_commodity: Option<Commodity> = None;
-    let now = Utc::now().naive_utc();
-    for station in filtered_stations.iter().progress() {
-        let commodities = all_commodities.get(&station.id).unwrap();
-
-        for commodity in commodities.iter() {
-            // apply filter criteria
-            let dur = now - commodity.listed_at;
-            if commodity.name != name
-                || commodity.stock < min_quantity.try_into()?
-                || dur.num_days() > max_age.into()
-            {
-                continue;
-            }
-
-            if best_commodity
-                .as_ref()
-                .is_none_or(|bc| commodity.sell_price < bc.sell_price)
-            {
-                best_station = Some(station.clone());
-                best_commodity = Some(commodity.clone());
-            }
-        }
-    }
-
-    info!("=== Best station ===");
-    if let Some(station) = best_station {
-        let bc = best_commodity.unwrap();
-        let system = sqlx::query!(
-            r#"
-            SELECT name FROM systems WHERE id = $1;
-        "#,
-            station.system_id,
-        )
-        .fetch_one(&pool)
-        .await?;
-
-        info!(
-            "{} in {} has {} {} available for {} CR each (listed on {})",
-            station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
-        );
-    }
-
-    // TODO show best 5 stations, not best station
+    // info!("Setting up PostgreSQL pool on {url}");
+    // let var_name = PgPoolOptions::new();
+    // let pool = var_name.max_connections(32).connect(&url).await?;
+    //
+    // info!("Fetching all stations");
+    // let stations = get_all_stations(&pool, landing_pad).await?;
+    //
+    // // ensure that we are only selecting stations that have a market and system attached to
+    // // them
+    // let filtered_stations: Vec<Station> = stations
+    //     .into_iter()
+    //     .filter(|station| {
+    //         station.market_id.is_some()
+    //             && station.system_id.is_some()
+    //             && !is_fleet_carrier(&station.name)
+    //     })
+    //     .collect();
+    //
+    // info!(
+    //     "Retrieving all commodities for {} filtered stations",
+    //     filtered_stations.len()
+    // );
+    // let all_commodities = get_all_commodities(&filtered_stations, &pool, &cutoff).await?;
+    //
+    // info!("Finding best values");
+    // let mut best_station: Option<Station> = None;
+    // let mut best_commodity: Option<Commodity> = None;
+    // let now = Utc::now().naive_utc();
+    // for station in filtered_stations.iter().progress() {
+    //     let commodities = all_commodities.get(&station.id).unwrap();
+    //
+    //     for commodity in commodities.iter() {
+    //         // apply filter criteria
+    //         let dur = now - commodity.listed_at;
+    //         if commodity.name != name
+    //             || commodity.stock < min_quantity.try_into()?
+    //             || dur.num_days() > max_age.into()
+    //         {
+    //             continue;
+    //         }
+    //
+    //         if best_commodity
+    //             .as_ref()
+    //             .is_none_or(|bc| commodity.sell_price < bc.sell_price)
+    //         {
+    //             best_station = Some(station.clone());
+    //             best_commodity = Some(commodity.clone());
+    //         }
+    //     }
+    // }
+    //
+    // info!("=== Best station ===");
+    // if let Some(station) = best_station {
+    //     let bc = best_commodity.unwrap();
+    //     let system = sqlx::query!(
+    //         r#"
+    //         SELECT name FROM systems WHERE id = $1;
+    //     "#,
+    //         station.system_id,
+    //     )
+    //     .fetch_one(&pool)
+    //     .await?;
+    //
+    //     info!(
+    //         "{} in {} has {} {} available for {} CR each (listed on {})",
+    //         station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
+    //     );
+    // }
+    //
+    // // TODO show best 5 stations, not best station
 
     Ok(())
 }

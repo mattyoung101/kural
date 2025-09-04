@@ -1,3 +1,6 @@
+use chrono::DateTime;
+use chrono::NaiveDate;
+use chrono::NaiveDateTime;
 use chrono::Utc;
 use color_eyre::Result;
 use count_digits::CountDigits;
@@ -6,7 +9,7 @@ use owo_colors::colors::css::DarkOrange;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
-use sqlx::{types::chrono::NaiveDateTime, FromRow, Pool, Postgres};
+use sqlx::{FromRow, Pool, Postgres};
 use thousands::Separable;
 
 #[derive(Debug, FromRow)]
@@ -105,7 +108,11 @@ impl TradeSolution {
             self.cost.round().separate_with_commas().fg::<Red>(),
         );
 
-        let commodities = self.source.get_commodities(pool).await.unwrap();
+        let commodities = self
+            .source
+            .get_commodities(pool, &NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().into())
+            .await
+            .unwrap();
         let market = StationMarket::new(self.source.clone(), commodities);
 
         for order in &self.buy {
@@ -164,9 +171,9 @@ impl Station {
     pub async fn get_system_name(self: &Station, pool: &Pool<Postgres>) -> String {
         return sqlx::query!(
             r#"
-            SELECT name
-            FROM systems
-            WHERE id = $1;
+                SELECT name
+                FROM systems
+                WHERE id = $1;
             "#,
             self.system_id
         )
@@ -180,6 +187,7 @@ impl Station {
     pub async fn get_commodities(
         self: &Station,
         pool: &Pool<Postgres>,
+        date_cutoff: &NaiveDateTime,
     ) -> Result<Vec<Commodity>, sqlx::Error> {
         // fetch commodities, for each commodity, only selecting the most recent
         // one using a common table subexpression
@@ -198,10 +206,11 @@ impl Station {
                     l.stock_bracket,
                     l.listed_at
                 FROM listings l
-                WHERE l.market_id = $1
+                WHERE l.market_id = $1 AND l.listed_at >= $2
                 ORDER BY l.name, l.listed_at DESC;
             "#,
-            self.market_id.unwrap()
+            self.market_id.unwrap(),
+            date_cutoff,
         )
         .fetch_all(pool)
         .await;

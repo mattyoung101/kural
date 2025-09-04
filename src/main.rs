@@ -77,9 +77,9 @@ enum Commands {
         /// Landing pad size
         landing_pad: LandingPad,
 
-        // #[arg(long)]
-        // /// Maximum days that a commodity may have been last updated in, in order to be considered
-        // expiry: Option<u32>,
+        #[arg(long)]
+        /// Maximum days that a commodity may have been last updated in, in order to be considered
+        expiry: Option<u32>,
     },
 
     /// Finds the cheapest commodities. Does not consider player carriers in the search.
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
                 "Kural".bold().fg::<Green>(),
                 "Elite: Dangerous".italic()
             );
-            println!("Copyright (c) 2024-2025 Matt Young. ISC Licence.");
+            println!("Copyright (c) 2024-2025 M. Young. ISC Licence.");
             Ok(())
         }
 
@@ -137,6 +137,7 @@ async fn main() -> Result<()> {
             capacity,
             random_sample,
             landing_pad,
+            expiry,
         } => {
             if random_sample <= 0.0 || random_sample > 1.0 {
                 eprintln!("Illegal random_sample value: {random_sample}");
@@ -151,6 +152,7 @@ async fn main() -> Result<()> {
                 capacity,
                 random_sample,
                 landing_pad,
+                expiry
             )
             .await?;
 
