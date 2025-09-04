@@ -1,7 +1,6 @@
 use chrono::Utc;
 use color_eyre::Result;
 use geozero::wkb;
-use log::info;
 use owo_colors::colors::css::DarkOrange;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
@@ -95,7 +94,7 @@ impl TradeSolution {
         }
     }
 
-    pub async fn dump_coloured(self: &Self, pool: &Pool<Postgres>) -> String {
+    pub async fn dump_coloured(&self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
             "➡️ For {} CR profit:\n    Travel to {} in {} and buy (for {} CR):\n",
             self.profit.separate_with_commas().fg::<Green>(),
@@ -104,11 +103,30 @@ impl TradeSolution {
             // often we just get like .000006, so ignore it for the buy cost
             self.cost.round().separate_with_commas().fg::<Red>(),
         );
+
+        let commodities = self.source.get_commodities(pool).await.unwrap();
+        let market = StationMarket::new(self.source.clone(), commodities);
+
         for order in &self.buy {
             if order.count == 0 {
                 continue;
             }
-            str += &format!("        {}x {}\n", order.count, order.commodity_name).to_string();
+
+            let update = market
+                .get_commodity(&order.commodity_name)
+                .unwrap()
+                .listed_at;
+            let dur = chrono_humanize::HumanTime::from(update - Utc::now().naive_utc());
+            let spacing = 16 - order.commodity_name.len() + 4;
+
+            str += &format!(
+                "        {}x {}{}(updated {})\n",
+                order.count,
+                order.commodity_name,
+                " ".repeat(spacing),
+                dur.fg::<DarkOrange>()
+            )
+            .to_string();
         }
         str += &format!(
             "    Then, travel to {} in {} and sell.\n",
@@ -116,22 +134,25 @@ impl TradeSolution {
             self.destination.get_system_name(pool).await.fg::<Orange>()
         );
 
-        let newest_update = self
-            .source
-            .get_commodities(pool)
-            .await
-            .unwrap()
-            .into_iter()
-            .max_by_key(|x| x.listed_at)
-            .unwrap()
-            .listed_at;
+        // let newest_update = self
+        //     .source
+        //     .get_commodities(pool)
+        //     .await
+        //     .unwrap()
+        //     .into_iter()
+        //     .max_by_key(|x| x.listed_at)
+        //     .unwrap()
+        //     .listed_at;
+        //
+        // // I may be stupid but I can't understand for the life of me why this subtraction is not
+        // // the other way around - shouldn't it be (now - newest_update)? oh well
+        // let dur = chrono_humanize::HumanTime::from(newest_update - Utc::now().naive_utc());
+        // str += &format!(
+        //     "    (Data most recently updated {})",
+        //     dur.fg::<DarkOrange>()
+        // );
 
-        // I may be stupid but I can't understand for the life of me why this subtraction is not
-        // the other way around - shouldn't it be (now - newest_update)? oh well
-        let dur = chrono_humanize::HumanTime::from(newest_update - Utc::now().naive_utc());
-        str += &format!("    (Data most recently updated {})", dur.fg::<DarkOrange>());
-
-        return str;
+        str
     }
 }
 
@@ -144,13 +165,12 @@ impl StationMarket {
     }
 
     /// Finds the commodity in the market
-    pub fn get_commodity(self: &Self, name: &String) -> Option<Commodity> {
+    pub fn get_commodity(&self, name: &String) -> Option<Commodity> {
         // FIXME we should look this up in a hashtable for perf; O(n) -> O(1)
-        return self
-            .commodities
+        self.commodities
             .iter()
             .find(|commodity| *commodity.name == *name)
-            .cloned();
+            .cloned()
     }
 }
 

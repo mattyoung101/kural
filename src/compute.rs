@@ -9,6 +9,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::info;
 use ordered_float::OrderedFloat;
+use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
@@ -51,13 +52,13 @@ async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Res
 /// Finds commodities for a group of stations. The result is a map of IDs to the commodities at
 /// that station.
 async fn get_all_commodities(
-    stations: &Vec<Station>,
+    stations: &[Station],
     pool: &Pool<Postgres>,
 ) -> Result<Arc<DashMap<i64, Vec<Commodity>>>> {
     let out: Arc<DashMap<i64, Vec<Commodity>>> = Arc::new(DashMap::new());
 
     let bar = Arc::new(ProgressBar::new(stations.len().try_into().unwrap()));
-    futures::stream::iter(stations.clone().iter())
+    futures::stream::iter(stations.iter())
         .for_each(|station1| {
             let pool = pool.clone();
             let bar = bar.clone();
@@ -70,7 +71,7 @@ async fn get_all_commodities(
         })
         .await;
 
-    return Ok(out);
+    Ok(out)
 }
 
 lazy_static! {
@@ -78,8 +79,8 @@ lazy_static! {
 }
 
 /// Returns true if the station name is a fleet carrier
-fn is_fleet_carrier(name: &String) -> bool {
-    return FLEET_CARRIER_REGEX.find(name).is_some();
+fn is_fleet_carrier(name: &str) -> bool {
+    FLEET_CARRIER_REGEX.find(name).is_some()
 }
 
 /// Computes a single hop route
@@ -92,21 +93,22 @@ pub async fn compute_single(
     sample_factor: f32,
     landing_pad: LandingPad,
 ) -> Result<()> {
-    info!("Setting up PostgreSQL pool on {}", url);
+    println!("Setting up PostgreSQL pool on {}", url.fg::<Orange>());
     let var_name = PgPoolOptions::new();
     let pool = var_name.max_connections(32).connect(&url).await?;
 
     match src {
         Some(source) => Ok(()),
         None => {
-            info!("Fetching all stations");
+            println!("Fetching all stations");
             let stations = get_all_stations(&pool, landing_pad).await?;
 
             // the galaxy is very large, so randomly sample a number of stations
             let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
-            info!(
+            println!(
                 "Computing random sample, factor: {} ({} stations)",
-                sample_factor, sample_size
+                sample_factor.fg::<Orange>(),
+                sample_size.fg::<Orange>()
             );
             // use SmallRng for speed
             let mut rng = SmallRng::from_entropy();
@@ -119,7 +121,7 @@ pub async fn compute_single(
                         && station.system_id.is_some()
                         && !is_fleet_carrier(&station.name)
                 })
-                .map(|station| station.clone())
+                .cloned()
                 .collect();
 
             // now we can compute the random subsample
@@ -130,18 +132,18 @@ pub async fn compute_single(
                 .map(|it| (*it).clone())
                 .collect();
 
-            info!(
+            println!(
                 "Retrieving all commodities for {} sampled stations",
-                sample.len()
+                sample.len().fg::<Orange>()
             );
             let all_commodities = get_all_commodities(&sample, &pool).await?;
 
-            info!(
+            println!(
                 "Computing trades for {} stations (approx {} individual routes)",
-                sample.len(),
+                sample.len().fg::<Orange>(),
                 // this is because its stations^2 minus self intersecting routes (like going from
                 // A->A)
-                sample.len().pow(2) - sample.len()
+                (sample.len().pow(2) - sample.len()).fg::<Green>()
             );
 
             let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
@@ -187,7 +189,7 @@ pub async fn compute_single(
             println!("{}", "✨ Most optimal trades:".bold().fg::<Green>());
             for (i, trade) in best_solutions.iter().take(5).enumerate() {
                 println!("{}. {}", i + 1, trade.dump_coloured(&pool).await);
-                println!("");
+                println!();
             }
 
             Ok(())
@@ -203,7 +205,7 @@ pub async fn find_cheapest(
     max_age: u32,
     min_quantity: u32,
 ) -> Result<()> {
-    info!("Setting up PostgreSQL pool on {}", url);
+    info!("Setting up PostgreSQL pool on {url}");
     let var_name = PgPoolOptions::new();
     let pool = var_name.max_connections(32).connect(&url).await?;
 
@@ -255,24 +257,21 @@ pub async fn find_cheapest(
     }
 
     info!("=== Best station ===");
-    match best_station {
-        Some(station) => {
-            let bc = best_commodity.unwrap();
-            let system = sqlx::query!(
-                r#"
-                SELECT name FROM systems WHERE id = $1;
-            "#,
-                station.system_id,
-            )
-            .fetch_one(&pool)
-            .await?;
+    if let Some(station) = best_station {
+        let bc = best_commodity.unwrap();
+        let system = sqlx::query!(
+            r#"
+            SELECT name FROM systems WHERE id = $1;
+        "#,
+            station.system_id,
+        )
+        .fetch_one(&pool)
+        .await?;
 
-            info!(
-                "{} in {} has {} {} available for {} CR each (listed on {})",
-                station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
-            );
-        }
-        None => {}
+        info!(
+            "{} in {} has {} {} available for {} CR each (listed on {})",
+            station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
+        );
     }
 
     // TODO show best 5 stations, not best station

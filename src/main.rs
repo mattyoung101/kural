@@ -1,12 +1,14 @@
-use core::f32;
-use std::process::exit;
-
-use ansi_term::Style;
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
 use compute::{compute_single, find_cheapest};
+use core::f32;
 use env_logger::{Builder, Env};
-use log::{error, info};
+use jemallocator::Jemalloc;
+use owo_colors::{colors::Green, OwoColorize};
+use std::process::exit;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 pub mod compute;
 pub mod router;
@@ -41,15 +43,15 @@ enum Commands {
     /// be optionally tuned to generate valid routes using your ship's jump distance.
     ComputeSingle {
         #[arg(long)]
-        /// EDTear Postgres connection URL. Recommended: postgres://postgres:password@localhost/edtear
+        /// EDTear Postgres connection URL
         url: String,
 
         #[arg(long)]
-        /// Worst-case (fully laden) jump range in light years
+        /// Worst-case (fully laden) jump range in light years (! CURRENTLY IGNORED !)
         jump: f32,
 
         #[arg(long)]
-        /// Initial capital funds
+        /// Initial capital to purchase items
         capital: u64,
 
         #[arg(long)]
@@ -66,7 +68,7 @@ enum Commands {
         max_jumps: Option<u32>,
 
         #[arg(long)]
-        #[clap(default_value = "0.5")]
+        #[clap(default_value = "0.01")]
         /// For each station, this is the percent between 0.0 and 1.0 of other stations in the
         /// galaxy to randomly sample
         random_sample: f32,
@@ -114,8 +116,9 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::Version {} => {
             println!(
-                "Kural v{VERSION}: High-performance {} trade route calculator",
-                Style::new().italic().paint("Elite: Dangerous")
+                "{} v{VERSION}: High-performance {} trade route calculator",
+                "Kural".bold().fg::<Green>(),
+                "Elite: Dangerous".italic()
             );
             println!("Copyright (c) 2024-2025 Matt Young. ISC Licence.");
             Ok(())
@@ -132,7 +135,7 @@ async fn main() -> Result<()> {
             landing_pad,
         } => {
             if random_sample <= 0.0 || random_sample > 1.0 {
-                error!("Illegal random_sample value");
+                eprintln!("Illegal random_sample value: {random_sample}");
                 exit(1);
             }
 

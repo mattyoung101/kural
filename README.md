@@ -18,6 +18,8 @@ first observation of supply and demand:
 > [source](https://en.wikipedia.org/wiki/Supply_and_demand#History)
 
 ## Running
+First, you need a running instance of my other project, EDTear (see above). I plan to release periodic dumps
+for my database which has been running since c. Jan 2025, and has ~200 million records.
 
 ## Licence
 Copyright (c) 2024-2025 M. Young.

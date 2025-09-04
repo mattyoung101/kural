@@ -1,12 +1,12 @@
 use crate::types::{Order, StationMarket, TradeSolution};
-use good_lp::{constraint, highs, variable, Expression, ProblemVariables, Variable};
+use good_lp::{coin_cbc, constraint, highs, scip, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
 use log::{debug, error};
 use std::collections::BTreeMap;
 
 /// Solves an instance of the bounded knapsack problem using linear programming. Returns Some if a
 /// solution could be computed, otherwise None.
-pub fn solve_knapsack<'a>(
+pub fn solve_knapsack(
     source: StationMarket,
     destination: StationMarket,
     capacity: u32,
@@ -26,7 +26,7 @@ pub fn solve_knapsack<'a>(
 
     for commodity in &source.commodities {
         // check that this commodity is present in the destination
-        if !all_dest_commodity_names.contains(&&commodity.name) {
+        if !all_dest_commodity_names.contains(&commodity.name) {
             continue;
         }
 
@@ -101,7 +101,7 @@ pub fn solve_knapsack<'a>(
     match solution {
         Ok(sol) => {
             let profit = sol.eval(&objective);
-            let cost = sol.eval(&capital_expr.clone());
+            let cost = sol.eval(capital_expr.clone());
             debug!(
                 "Computed {} -> {} with profit {}",
                 source.station.name, destination.station.name, profit
@@ -121,20 +121,20 @@ pub fn solve_knapsack<'a>(
                 })
                 .collect();
 
-            return Some(TradeSolution::new(
+            Some(TradeSolution::new(
                 source.station,
                 destination.station,
                 orders,
                 profit,
                 cost,
-            ));
+            ))
         }
         Err(err) => {
             error!(
                 "Could not solve {} -> {}: {}",
                 source.station.name, destination.station.name, err
             );
-            return None;
+            None
         }
     }
 }
