@@ -5,10 +5,9 @@ use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressIterator};
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use log::info;
 use ordered_float::OrderedFloat;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
@@ -20,6 +19,7 @@ use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 #[allow(unused_variables)]
@@ -38,12 +38,12 @@ async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Res
 
     return Ok(sqlx::query_as!(
         Station,
-        r#"SELECT
-            id, name, distance_to_arrival, market_id, system_id
-        FROM stations
-        WHERE
-            market_id IS NOT NULL AND system_id IS NOT NULL AND landing_pad LIKE $1
-        ;"#,
+        r#"
+            SELECT s.id, s.name AS name, s.distance_to_arrival, s.market_id, s.system_id, y.name AS system_name
+                FROM stations s
+            INNER JOIN systems y ON y.id = s.system_id
+                WHERE s.market_id IS NOT NULL AND s.system_id IS NOT NULL AND s.landing_pad LIKE $1;
+        "#,
         pad_name
     )
     .fetch_all(pool)
@@ -89,12 +89,12 @@ fn is_fleet_carrier(name: &str) -> bool {
 pub async fn compute_single(
     url: String,
     src: Option<String>,
-    jump: f32,
     capital: u64,
     capacity: u32,
     sample_factor: f32,
     landing_pad: LandingPad,
     expiry: Option<u32>,
+    max_dst: Option<f32>,
 ) -> Result<()> {
     println!("Setting up PostgreSQL pool on {}", url.fg::<Orange>());
     let var_name = PgPoolOptions::new();
@@ -106,46 +106,119 @@ pub async fn compute_single(
         None => NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().into(),
     };
 
+    println!("Fetching all stations");
+    let stations = get_all_stations(&pool, landing_pad).await?;
+
+    // the galaxy is very large, so randomly sample a number of stations
+    // FIXME handle cases where the number of stations is very small and we end up with a size of 0
+    let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
+    println!(
+        "Computing random sample, factor: {} ({} stations)",
+        sample_factor.fg::<Orange>(),
+        sample_size.fg::<Orange>()
+    );
+    // use SmallRng for speed
+    let mut rng = SmallRng::from_entropy();
+    // ensure that we are only selecting stations that have a market and system attached to
+    // them
+    let filtered_stations: Vec<Station> = stations
+        .iter()
+        .filter(|station| {
+            station.market_id.is_some()
+                && station.system_id.is_some()
+                && !is_fleet_carrier(&station.name)
+        })
+        .cloned()
+        .collect();
+
+    // now we can compute the random subsample
+    let mut sample: Vec<Station> = filtered_stations
+        .iter()
+        .choose_multiple(&mut rng, sample_size)
+        .iter()
+        .map(|it| (*it).clone())
+        .collect();
+
+    let all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
+
     match src {
-        Some(source) => Ok(()),
-        None => {
-            println!("Fetching all stations");
-            let stations = get_all_stations(&pool, landing_pad).await?;
-
-            // the galaxy is very large, so randomly sample a number of stations
-            let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
-            println!(
-                "Computing random sample, factor: {} ({} stations)",
-                sample_factor.fg::<Orange>(),
-                sample_size.fg::<Orange>()
-            );
-            // use SmallRng for speed
-            let mut rng = SmallRng::from_entropy();
-            // ensure that we are only selecting stations that have a market and system attached to
-            // them
-            let filtered_stations: Vec<Station> = stations
+        Some(source) => {
+            // fixed source set
+            // compare each station
+            println!("Sub-sampling all stations to fixed start '{source}'");
+            let subsample: Vec<Station> = stations
                 .iter()
-                .filter(|station| {
-                    station.market_id.is_some()
-                        && station.system_id.is_some()
-                        && !is_fleet_carrier(&station.name)
+                .filter(|x| {
+                    x.system_name
+                        .clone()
+                        .is_some_and(|s| s.to_lowercase() == source.to_lowercase())
                 })
-                .cloned()
+                .map(|x| (*x).clone())
                 .collect();
 
-            // now we can compute the random subsample
-            let sample: Vec<Station> = filtered_stations
-                .iter()
-                .choose_multiple(&mut rng, sample_size)
-                .iter()
-                .map(|it| (*it).clone())
-                .collect();
+            // extend the samples list with our fixed subsample
+            sample.extend(subsample.clone().into_iter());
 
             println!(
                 "Retrieving all commodities for {} sampled stations",
                 sample.len().fg::<Orange>()
             );
             let all_commodities = get_all_commodities(&sample, &pool, &date_cutoff).await?;
+
+            if all_commodities.is_empty() {
+                eprintln!("No commodities could be found after applying filtering. Maybe adjust your date cutoff?");
+                exit(1);
+            }
+
+            println!(
+                "Computing trades for approx {} stations (with fixed start location '{source}')",
+                subsample.len().fg::<Orange>(),
+            );
+
+            let bar = Arc::new(ProgressBar::new(subsample.len().try_into().unwrap()));
+
+            subsample.clone().par_iter().for_each(|station1| {
+                let bar = bar.clone();
+                let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
+                {
+                    for station2 in &sample {
+                        // skip self
+                        if station2.id == station1.id {
+                            continue;
+                        }
+                        let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
+
+                        let solution = solve_knapsack(
+                            StationMarket::new(station1.clone(), commodities1.clone()),
+                            StationMarket::new(station2.clone(), commodities2.clone()),
+                            capacity,
+                            capital,
+                        );
+
+                        if let Some(sol) = solution {
+                            let mut access = all_solutions.lock().unwrap();
+                            access.push(sol.clone());
+                        }
+                    }
+                    bar.clone().inc(1);
+                }
+            });
+
+            bar.clone().finish();
+        }
+
+        None => {
+            // no fixed source set
+            // here we compare every station with every other station in the list
+            println!(
+                "Retrieving all commodities for {} sampled stations",
+                sample.len().fg::<Orange>()
+            );
+            let all_commodities = get_all_commodities(&sample, &pool, &date_cutoff).await?;
+            if all_commodities.is_empty() {
+                eprintln!("No commodities could be found after applying filtering. Maybe adjust your date cutoff?");
+                exit(1);
+            }
 
             println!(
                 "Computing trades for {} stations (approx {} individual routes)",
@@ -156,9 +229,7 @@ pub async fn compute_single(
             );
 
             let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
-            let all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
 
-            // here we compare every station with every other station in the list
             sample.clone().par_iter().for_each(|station1| {
                 let bar = bar.clone();
                 let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
@@ -187,23 +258,23 @@ pub async fn compute_single(
             });
 
             bar.clone().finish();
-
-            let solutions = all_solutions.lock().unwrap();
-            let best_solutions: Vec<&TradeSolution> = solutions
-                .iter()
-                .sorted_by_key(|x| OrderedFloat(x.profit))
-                .rev()
-                .collect();
-
-            println!("{}", "✨ Most optimal trades:".bold().fg::<Green>());
-            for (i, trade) in best_solutions.iter().take(5).enumerate() {
-                println!("{}. {}", i + 1, trade.dump_coloured(&pool).await);
-                println!();
-            }
-
-            Ok(())
         }
     }
+
+    let solutions = all_solutions.lock().unwrap();
+    let best_solutions: Vec<&TradeSolution> = solutions
+        .iter()
+        .sorted_by_key(|x| OrderedFloat(x.profit))
+        .rev()
+        .collect();
+
+    println!("{}", "✨ Most optimal trades:".bold().fg::<Green>());
+    for (i, trade) in best_solutions.iter().take(5).enumerate() {
+        println!("{}. {}", i + 1, trade.dump_coloured(&pool).await);
+        println!();
+    }
+
+    Ok(())
 }
 
 /// Finds cheapest commodities in the database

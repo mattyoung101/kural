@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n            id, name, distance_to_arrival, market_id, system_id\n        FROM stations\n        WHERE\n            market_id IS NOT NULL AND system_id IS NOT NULL AND landing_pad LIKE $1\n        ;",
+  "query": "\n            SELECT s.id, s.name AS name, s.distance_to_arrival, s.market_id, s.system_id, y.name AS system_name\n                FROM stations s\n            INNER JOIN systems y ON y.id = s.system_id\n                WHERE s.market_id IS NOT NULL AND s.system_id IS NOT NULL AND s.landing_pad LIKE $1;\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,11 @@
         "ordinal": 4,
         "name": "system_id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "system_name",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -39,8 +44,9 @@
       false,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "1c63dd1fbf9afba5c643b52ea4e96a83448c7e3dae994dba2d1616ebee18f49e"
+  "hash": "509f2d218ac470c006c22f0cc97d2bc30d19fa27cd178c8ef6e408b73892bb6b"
 }

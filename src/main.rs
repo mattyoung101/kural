@@ -3,12 +3,8 @@ use color_eyre::eyre::Result;
 use compute::{compute_single, find_cheapest};
 use core::f32;
 use env_logger::{Builder, Env};
-use jemallocator::Jemalloc;
 use owo_colors::{colors::Green, OwoColorize};
 use std::process::exit;
-
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
 
 pub mod compute;
 pub mod router;
@@ -47,10 +43,6 @@ enum Commands {
         url: String,
 
         #[arg(long)]
-        /// Worst-case (fully laden) jump range in light years (! CURRENTLY IGNORED !)
-        jump: f32,
-
-        #[arg(long)]
         /// Initial capital to purchase items
         capital: u64,
 
@@ -63,9 +55,8 @@ enum Commands {
         src: Option<String>,
 
         #[arg(long)]
-        /// Max jumps to get from A to B. If unspecified, hops are not considered and your ship is
-        /// assumed to be able to commute from any system to any other system in The Bubble.
-        max_jumps: Option<u32>,
+        /// Max distance in light years to search in. Must be combined with `--src`.
+        max_dst: Option<f32>,
 
         #[arg(long)]
         #[clap(default_value = "0.01")]
@@ -130,11 +121,10 @@ async fn main() -> Result<()> {
 
         Commands::ComputeSingle {
             url,
-            src,
-            jump,
             capital,
-            max_jumps,
             capacity,
+            src,
+            max_dst,
             random_sample,
             landing_pad,
             expiry,
@@ -144,15 +134,21 @@ async fn main() -> Result<()> {
                 exit(1);
             }
 
+            // max_dst must be combined with src
+            if max_dst.is_some() && src.is_none() {
+                eprintln!("--max-dst must be combined with --src");
+                exit(1);
+            }
+
             compute_single(
                 url,
                 src.clone(),
-                jump,
                 capital,
                 capacity,
                 random_sample,
                 landing_pad,
-                expiry
+                expiry,
+                max_dst,
             )
             .await?;
 

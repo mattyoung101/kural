@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT DISTINCT ON (l.name)\n                    l.market_id,\n                    l.name,\n                    l.mean_price,\n                    l.buy_price,\n                    l.sell_price,\n                    l.demand,\n                    l.demand_bracket,\n                    l.stock,\n                    l.stock_bracket,\n                    l.listed_at\n                FROM listings l\n                WHERE l.market_id = $1\n                ORDER BY l.name, l.listed_at DESC;\n            ",
+  "query": "\n                SELECT DISTINCT ON (l.name)\n                    l.market_id,\n                    l.name,\n                    l.mean_price,\n                    l.buy_price,\n                    l.sell_price,\n                    l.demand,\n                    l.demand_bracket,\n                    l.stock,\n                    l.stock_bracket,\n                    l.listed_at\n                FROM listings l\n                WHERE l.market_id = $1 AND l.listed_at >= $2\n                ORDER BY l.name, l.listed_at DESC;\n            ",
   "describe": {
     "columns": [
       {
@@ -56,7 +56,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Timestamp"
       ]
     },
     "nullable": [
@@ -72,5 +73,5 @@
       false
     ]
   },
-  "hash": "cbea5b8212e3d9fc5d7352aaf045b66953e3eb511e1fea29b498fa8b74072085"
+  "hash": "73a6cb443e29e57b7f9d74b453dcae1f50ba23b9878335fc0a2c71583ac951ac"
 }

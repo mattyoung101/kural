@@ -27,6 +27,7 @@ pub struct Station {
     pub distance_to_arrival: Option<f32>,
     pub market_id: Option<i64>,
     pub system_id: Option<i64>,
+    pub system_name: Option<String>,
 }
 
 #[derive(Debug, FromRow, Clone)]
