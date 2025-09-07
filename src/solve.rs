@@ -1,5 +1,5 @@
 use crate::types::{Order, StationMarket, TradeSolution};
-use good_lp::{coin_cbc, constraint, highs, scip, variable, Expression, ProblemVariables, Variable};
+use good_lp::{constraint, highs, variable, Expression, ProblemVariables, Variable};
 use good_lp::{Solution, SolverModel};
 use log::{debug, error};
 use std::collections::BTreeMap;
