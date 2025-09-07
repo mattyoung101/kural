@@ -5,13 +5,13 @@ on:
 
 jobs:
   build:
-    name: cargo test
+    name: Build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: x86_64-unknown-linux-musl
+          target: x86_64-unknown-linux-musl
 
       - run: cargo build --release --target=x86_64-unknown-linux-musl
