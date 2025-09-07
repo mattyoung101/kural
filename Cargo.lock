@@ -1182,6 +1182,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "regex",
+ "serde",
  "sqlx",
  "thousands",
  "tokio",

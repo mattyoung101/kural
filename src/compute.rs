@@ -1,15 +1,17 @@
 use crate::solve::solve_knapsack;
-use crate::types::{Commodity, Station, StationMarket, TradeSolution};
+use crate::types::Coordinate;
+use crate::types::{Commodity, Station, StationMarket, System, TradeSolution};
 use crate::LandingPad;
 use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use color_eyre::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
+use geozero::wkb;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use ordered_float::OrderedFloat;
-use owo_colors::colors::css::Orange;
+use owo_colors::colors::css::{DarkOrange, Orange};
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
@@ -19,6 +21,7 @@ use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
+use std::collections::HashSet;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
@@ -47,6 +50,45 @@ async fn get_all_stations(pool: &Pool<Postgres>, landing_pad: LandingPad) -> Res
         pad_name
     )
     .fetch_all(pool)
+    .await?);
+}
+
+/// Gets a list of all systems in range of the given system
+async fn get_all_systems_in_range(
+    pool: &Pool<Postgres>,
+    source: &System,
+    range: f64,
+) -> Result<Vec<System>> {
+    let coord = source.coords.geometry.expect("no coordinate");
+
+    return Ok(sqlx::query_as!(
+        System,
+        r#"
+            SELECT id, name, date, coords AS "coords!: wkb::Decode<Coordinate>"
+                FROM systems
+            WHERE ST_3DDWithin(coords, ST_MakePoint($1, $2, $3), $4)
+        "#,
+        coord.x,
+        coord.y,
+        coord.z,
+        range,
+    )
+    .fetch_all(pool)
+    .await?);
+}
+
+/// Gets a system by its name
+async fn get_system_by_name(pool: &Pool<Postgres>, name: &String) -> Result<System> {
+    return Ok(sqlx::query_as!(
+        System,
+        r#"
+            SELECT id, name, date, coords AS "coords!: wkb::Decode<Coordinate>"
+                FROM systems
+            WHERE LOWER(name) = LOWER($1);
+        "#,
+        name,
+    )
+    .fetch_one(pool)
     .await?);
 }
 
@@ -89,6 +131,7 @@ fn is_fleet_carrier(name: &str) -> bool {
 pub async fn compute_single(
     url: String,
     src: Option<String>,
+    src_search_ly: Option<f32>,
     capital: u64,
     capacity: u32,
     sample_factor: f32,
@@ -141,23 +184,64 @@ pub async fn compute_single(
 
     let all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
 
+    // FIXME this match needs a massive cleanup, we should collapse the Some and None arms
     match src {
-        Some(source) => {
-            // fixed source set
-            // compare each station
-            println!("Sub-sampling all stations to fixed start '{source}'");
-            let subsample: Vec<Station> = stations
-                .iter()
-                .filter(|x| {
-                    x.system_name
-                        .clone()
-                        .is_some_and(|s| s.to_lowercase() == source.to_lowercase())
-                })
-                .map(|x| (*x).clone())
-                .collect();
+        Some(ref source) => {
+            let mut stations_filtered: Vec<Station> = Vec::new();
 
-            // extend the samples list with our fixed subsample
-            sample.extend(subsample.clone().into_iter());
+            if let Some(dst) = src_search_ly {
+                let source_system =
+                    get_system_by_name(&pool, &src.clone().expect("src must be specified")).await?;
+
+                println!(
+                    "Finding acceptable systems in {} LY range of {}",
+                    dst.fg::<Orange>(),
+                    source.fg::<Orange>()
+                );
+                let systems: HashSet<String> =
+                    get_all_systems_in_range(&pool, &source_system, dst.into())
+                        .await?
+                        .iter()
+                        .map(|x| x.name.clone())
+                        .collect();
+                println!(
+                    "...found {} acceptable systems",
+                    systems.len().fg::<Orange>()
+                );
+
+                println!("Now filtering stations");
+                stations_filtered = stations
+                    .iter()
+                    .filter(|x| {
+                        !is_fleet_carrier(&x.name)
+                            && x.system_name
+                                .clone()
+                                .is_some_and(|it| systems.contains(&it))
+                    })
+                    .map(|x| (*x).clone())
+                    .collect();
+                println!(
+                    "Have {} stations after filtering",
+                    stations_filtered.len().fg::<Orange>()
+                );
+                // TODO randomly subsample stations_filtered further? if it's a large number?
+            } else {
+                // fixed source set
+                // compare each station
+                println!("Filtering all stations to fixed starting system '{source}'");
+                stations_filtered = stations
+                    .iter()
+                    .filter(|x| {
+                        x.system_name
+                            .as_ref()
+                            .is_some_and(|s| s.to_lowercase() == source.to_lowercase())
+                    })
+                    .map(|x| (*x).clone())
+                    .collect();
+            }
+
+            // extend the random sample with our fixed subsample (for when we do market lookup)
+            sample.extend(stations_filtered.clone().into_iter());
 
             println!(
                 "Retrieving all commodities for {} sampled stations",
@@ -171,13 +255,23 @@ pub async fn compute_single(
             }
 
             println!(
-                "Computing trades for approx {} stations (with fixed start location '{source}')",
-                subsample.len().fg::<Orange>(),
+                "Computing trades for approx {} stations ({} '{source}'{})",
+                stations_filtered.len().fg::<Orange>(),
+                "with fixed start location".fg::<DarkOrange>(),
+                if let Some(dst) = src_search_ly {
+                    format!(" and within {dst} LY")
+                        .fg::<DarkOrange>()
+                        .to_string()
+                } else {
+                    "".to_string()
+                }
             );
 
-            let bar = Arc::new(ProgressBar::new(subsample.len().try_into().unwrap()));
+            let bar = Arc::new(ProgressBar::new(
+                stations_filtered.len().try_into().unwrap(),
+            ));
 
-            subsample.clone().par_iter().for_each(|station1| {
+            stations_filtered.clone().par_iter().for_each(|station1| {
                 let bar = bar.clone();
                 let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
                 {
@@ -285,76 +379,5 @@ pub async fn find_cheapest(
     max_age: u32,
     min_quantity: u32,
 ) -> Result<()> {
-    // info!("Setting up PostgreSQL pool on {url}");
-    // let var_name = PgPoolOptions::new();
-    // let pool = var_name.max_connections(32).connect(&url).await?;
-    //
-    // info!("Fetching all stations");
-    // let stations = get_all_stations(&pool, landing_pad).await?;
-    //
-    // // ensure that we are only selecting stations that have a market and system attached to
-    // // them
-    // let filtered_stations: Vec<Station> = stations
-    //     .into_iter()
-    //     .filter(|station| {
-    //         station.market_id.is_some()
-    //             && station.system_id.is_some()
-    //             && !is_fleet_carrier(&station.name)
-    //     })
-    //     .collect();
-    //
-    // info!(
-    //     "Retrieving all commodities for {} filtered stations",
-    //     filtered_stations.len()
-    // );
-    // let all_commodities = get_all_commodities(&filtered_stations, &pool, &cutoff).await?;
-    //
-    // info!("Finding best values");
-    // let mut best_station: Option<Station> = None;
-    // let mut best_commodity: Option<Commodity> = None;
-    // let now = Utc::now().naive_utc();
-    // for station in filtered_stations.iter().progress() {
-    //     let commodities = all_commodities.get(&station.id).unwrap();
-    //
-    //     for commodity in commodities.iter() {
-    //         // apply filter criteria
-    //         let dur = now - commodity.listed_at;
-    //         if commodity.name != name
-    //             || commodity.stock < min_quantity.try_into()?
-    //             || dur.num_days() > max_age.into()
-    //         {
-    //             continue;
-    //         }
-    //
-    //         if best_commodity
-    //             .as_ref()
-    //             .is_none_or(|bc| commodity.sell_price < bc.sell_price)
-    //         {
-    //             best_station = Some(station.clone());
-    //             best_commodity = Some(commodity.clone());
-    //         }
-    //     }
-    // }
-    //
-    // info!("=== Best station ===");
-    // if let Some(station) = best_station {
-    //     let bc = best_commodity.unwrap();
-    //     let system = sqlx::query!(
-    //         r#"
-    //         SELECT name FROM systems WHERE id = $1;
-    //     "#,
-    //         station.system_id,
-    //     )
-    //     .fetch_one(&pool)
-    //     .await?;
-    //
-    //     info!(
-    //         "{} in {} has {} {} available for {} CR each (listed on {})",
-    //         station.name, system.name, bc.stock, name, bc.sell_price, bc.listed_at
-    //     );
-    // }
-    //
-    // // TODO show best 5 stations, not best station
-
     Ok(())
 }

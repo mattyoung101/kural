@@ -55,7 +55,12 @@ enum Commands {
         src: Option<String>,
 
         #[arg(long)]
-        /// Max distance in light years to search in. Must be combined with `--src`.
+        /// Max distance in light years to search around the start system in. Must be combined with `--src`.
+        src_search_ly: Option<f32>,
+
+        #[arg(long)]
+        /// Ensures that all jumps are approximately no more than this many light years.
+        /// (Calculated via direct Euclidean distance, so many not be 100% precise)
         max_dst: Option<f32>,
 
         #[arg(long)]
@@ -124,6 +129,7 @@ async fn main() -> Result<()> {
             capital,
             capacity,
             src,
+            src_search_ly,
             max_dst,
             random_sample,
             landing_pad,
@@ -143,6 +149,7 @@ async fn main() -> Result<()> {
             compute_single(
                 url,
                 src.clone(),
+                src_search_ly,
                 capital,
                 capacity,
                 random_sample,

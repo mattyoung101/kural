@@ -1,3 +1,6 @@
+use core::fmt;
+use std::io::Read;
+
 use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -5,19 +8,89 @@ use chrono::Utc;
 use color_eyre::Result;
 use count_digits::CountDigits;
 use geozero::wkb;
+use geozero::wkb::FromWkb;
+use geozero::wkb::WkbDialect;
+use geozero::CoordDimensions;
+use geozero::GeomProcessor;
+use geozero::GeozeroGeometry;
 use owo_colors::colors::css::DarkOrange;
 use owo_colors::colors::css::Orange;
 use owo_colors::colors::*;
 use owo_colors::OwoColorize;
+use serde::Deserialize;
+use serde::Serialize;
 use sqlx::{FromRow, Pool, Postgres};
 use thousands::Separable;
+
+// Credit: Nathan Lilienthal - Galos
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
+pub struct Coordinate {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+impl fmt::Display for Coordinate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({},{},{})", self.x, self.y, self.z)
+    }
+}
+
+impl GeomProcessor for Coordinate {
+    fn dimensions(&self) -> CoordDimensions {
+        CoordDimensions::xyz()
+    }
+
+    fn coordinate(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: Option<f64>,
+        _m: Option<f64>,
+        _t: Option<f64>,
+        _tm: Option<u64>,
+        _idx: usize,
+    ) -> geozero::error::Result<()> {
+        self.x = x;
+        self.y = y;
+        self.z = z.unwrap_or(0.0);
+        Ok(())
+    }
+}
+
+impl GeozeroGeometry for Coordinate {
+    fn process_geom<P: GeomProcessor>(
+        &self,
+        processor: &mut P,
+    ) -> std::result::Result<(), geozero::error::GeozeroError> {
+        processor.point_begin(0)?;
+        processor.coordinate(self.x, self.y, Some(self.z), None, None, None, 0)?;
+        processor.point_end(0)
+    }
+
+    fn dims(&self) -> CoordDimensions {
+        CoordDimensions::xyz()
+    }
+}
+
+impl FromWkb for Coordinate {
+    fn from_wkb<R: Read>(rdr: &mut R, dialect: WkbDialect) -> geozero::error::Result<Self> {
+        let mut pt = Coordinate {
+            x: 0.,
+            y: 0.,
+            z: 0.,
+        };
+        geozero::wkb::process_wkb_type_geom(rdr, &mut pt, dialect)?;
+        Ok(pt)
+    }
+}
 
 #[derive(Debug, FromRow)]
 pub struct System {
     pub id: i64,
     pub name: String,
     pub date: NaiveDateTime,
-    pub coords: wkb::Decode<geo_types::Geometry<f64>>,
+    pub coords: wkb::Decode<Coordinate>,
 }
 
 #[derive(Debug, FromRow, Clone)]
