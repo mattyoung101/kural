@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       SQLX_OFFLINE: true
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
 
