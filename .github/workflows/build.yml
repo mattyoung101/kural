@@ -17,5 +17,14 @@ jobs:
         with:
           rustflags: ""
 
+      - name: Install deps
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: coinor-cbc coinor-libcbc-dev
+          version: 1.0
+
+      - name: Setup ccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Compile
         run: cargo build --release
