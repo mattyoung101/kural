@@ -1,5 +1,6 @@
 use core::fmt;
 use std::io::Read;
+use std::sync::Arc;
 
 use chrono::DateTime;
 use chrono::NaiveDate;
@@ -7,6 +8,7 @@ use chrono::NaiveDateTime;
 use chrono::Utc;
 use color_eyre::Result;
 use count_digits::CountDigits;
+use distances::vectors::euclidean;
 use geozero::wkb;
 use geozero::wkb::FromWkb;
 use geozero::wkb::WkbDialect;
@@ -82,6 +84,13 @@ impl FromWkb for Coordinate {
         };
         geozero::wkb::process_wkb_type_geom(rdr, &mut pt, dialect)?;
         Ok(pt)
+    }
+}
+
+impl Coordinate {
+    /// Euclidean distance between this coordinate and the other coordinate
+    pub fn dst(&self, other: &Coordinate) -> f64 {
+        return euclidean(&[self.x, self.y, self.z], &[other.x, other.y, other.z]);
     }
 }
 

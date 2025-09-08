@@ -521,6 +521,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "distances"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afcbf1ea592606d7836c33c1f939ca79fe32e0a45c0f4f65f8a4e4bf0e499ef2"
+dependencies = [
+ "libm",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,6 +1179,7 @@ dependencies = [
  "color-eyre",
  "count-digits",
  "dashmap",
+ "distances",
  "env_logger",
  "futures",
  "geo-types",

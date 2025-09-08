@@ -5,7 +5,7 @@ use crate::LandingPad;
 use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use color_eyre::Result;
 use dashmap::DashMap;
-use futures::StreamExt;
+use futures::{executor, StreamExt};
 use geozero::wkb;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -21,7 +21,7 @@ use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
@@ -254,6 +254,19 @@ pub async fn compute_single(
                 exit(1);
             }
 
+            // nasty ass hack that we'll do to associate station names with system instances, since
+            // we can't async inside the stations_filtered.par_iter()
+            println!("Associating station names with system instances (hack), standby...");
+            let mut stations_systems_map: HashMap<String, System> = HashMap::new();
+            for station in &sample {
+                if let Some(system_name) = &station.system_name {
+                    stations_systems_map.insert(
+                        station.name.clone(),
+                        get_system_by_name(&pool, &system_name).await?,
+                    );
+                }
+            }
+
             println!(
                 "Computing trades for approx {} stations ({} '{source}'{})",
                 stations_filtered.len().fg::<Orange>(),
@@ -274,12 +287,33 @@ pub async fn compute_single(
             stations_filtered.clone().par_iter().for_each(|station1| {
                 let bar = bar.clone();
                 let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
+                let station1_system = stations_systems_map
+                    .get(&station1.name)
+                    .expect("couldn't find system name");
                 {
                     for station2 in &sample {
                         // skip self
                         if station2.id == station1.id {
                             continue;
                         }
+
+                        // ensure the other station is within the max distance (if it was specified)
+                        if let Some(dst) = max_dst {
+                            let station2_system = stations_systems_map
+                                .get(&station2.name)
+                                .expect("couldn't find system name");
+
+                            if station1_system
+                                .coords
+                                .geometry
+                                .unwrap()
+                                .dst(&station2_system.coords.geometry.unwrap())
+                                > dst.into()
+                            {
+                                continue;
+                            }
+                        }
+
                         let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
 
                         let solution = solve_knapsack(

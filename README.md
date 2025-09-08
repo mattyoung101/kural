@@ -1,7 +1,8 @@
 # Kural
 _Kural_ is a high-performance trade route calculator for Elite: Dangerous. It works by using [integer linear
 programming](https://en.wikipedia.org/wiki/Integer_programming) to solve large scale instances of the [bounded
-knapsack problem](https://en.wikipedia.org/wiki/Knapsack_problem).
+knapsack problem](https://en.wikipedia.org/wiki/Knapsack_problem). It supports a wide variety of filtering
+options, so that you can calculate trade routes that can be realistically executed in-game.
 
 Currently, the tool is planned to be able to compute single-hop, multi-commodity trade routes. In the future,
 I would like to also compute multi-hop, multi-commodity routes across the entire galaxy.
@@ -80,6 +81,15 @@ Computing trades for 404 stations (approx 162812 individual routes)
     Then, travel to Crown Terminal in Candiaei and sell.
 
 ```
+
+## Developer notes
+You should install the `pre-commit` hook to ensure sqlx statements are prepared before pushing: `pre-commit
+install`
+
+The code is _incredibly_ ugly, especially `compute.rs`; it's not idiomatic Rust, and it's also extremely slow
+(`.clone()` everywhere skull react). Definitely ripe for improvement.
+
+pls send pr? 👉👈🥺
 
 ## Licence
 Copyright (c) 2024-2025 M. Young.
