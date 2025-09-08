@@ -1,12 +1,8 @@
-use core::fmt;
-use std::io::Read;
-use std::sync::Arc;
-
-use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 use chrono::Utc;
 use color_eyre::Result;
+use core::fmt;
 use count_digits::CountDigits;
 use distances::vectors::euclidean;
 use geozero::wkb;
@@ -22,6 +18,7 @@ use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::{FromRow, Pool, Postgres};
+use std::io::Read;
 use thousands::Separable;
 
 // Credit: Nathan Lilienthal - Galos
@@ -184,7 +181,7 @@ impl TradeSolution {
     pub async fn dump_coloured(&self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
             "➡️ For {} CR profit:\n    Travel to {} in {} and buy (for {} CR):\n",
-            self.profit.round().separate_with_commas().fg::<Green>(),
+            self.profit.round().separate_with_commas().fg::<Green>().bold(),
             self.source.name.fg::<Orange>(),
             self.source.get_system_name(pool).await.fg::<Orange>(),
             // often we just get like .000006, so ignore it for the buy cost
@@ -226,6 +223,28 @@ impl TradeSolution {
             "    Then, travel to {} in {} and sell.\n",
             self.destination.name.fg::<Orange>(),
             self.destination.get_system_name(pool).await.fg::<Orange>()
+        );
+
+        let source_system =
+            get_system_by_name(pool, self.source.system_name.as_ref().unwrap().as_str())
+                .await
+                .unwrap();
+
+        let dest_system = get_system_by_name(
+            pool,
+            self.destination.system_name.as_ref().unwrap().as_str(),
+        )
+        .await
+        .unwrap();
+
+        let distance = source_system
+            .coords
+            .geometry
+            .unwrap()
+            .dst(&dest_system.coords.geometry.unwrap());
+        str += &format!(
+            "    (Approximately {} LY)",
+            (distance.round() as u64).fg::<Orange>()
         );
 
         str
@@ -298,4 +317,19 @@ impl Station {
         .fetch_all(pool)
         .await;
     }
+}
+
+/// Gets a system by its name
+pub async fn get_system_by_name(pool: &Pool<Postgres>, name: &str) -> Result<System> {
+    return Ok(sqlx::query_as!(
+        System,
+        r#"
+            SELECT id, name, date, coords AS "coords!: wkb::Decode<Coordinate>"
+                FROM systems
+            WHERE LOWER(name) = LOWER($1);
+        "#,
+        name,
+    )
+    .fetch_one(pool)
+    .await?);
 }

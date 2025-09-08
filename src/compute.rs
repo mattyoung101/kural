@@ -1,5 +1,5 @@
 use crate::solve::solve_knapsack;
-use crate::types::Coordinate;
+use crate::types::{get_system_by_name, Coordinate};
 use crate::types::{Commodity, Station, StationMarket, System, TradeSolution};
 use crate::LandingPad;
 use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
@@ -77,21 +77,6 @@ async fn get_all_systems_in_range(
     .await?);
 }
 
-/// Gets a system by its name
-async fn get_system_by_name(pool: &Pool<Postgres>, name: &String) -> Result<System> {
-    return Ok(sqlx::query_as!(
-        System,
-        r#"
-            SELECT id, name, date, coords AS "coords!: wkb::Decode<Coordinate>"
-                FROM systems
-            WHERE LOWER(name) = LOWER($1);
-        "#,
-        name,
-    )
-    .fetch_one(pool)
-    .await?);
-}
-
 /// Finds commodities for a group of stations. The result is a map of IDs to the commodities at
 /// that station.
 async fn get_all_commodities(
@@ -154,7 +139,7 @@ pub async fn compute_single(
 
     // the galaxy is very large, so randomly sample a number of stations
     // FIXME handle cases where the number of stations is very small and we end up with a size of 0
-    let sample_size: usize = (sample_factor * (stations.len() as f32)) as usize;
+    let sample_size: usize = (sample_factor * (stations.len() as f32)).round() as usize;
     println!(
         "Computing random sample, factor: {} ({} stations)",
         sample_factor.fg::<Orange>(),
@@ -164,7 +149,7 @@ pub async fn compute_single(
     let mut rng = SmallRng::from_entropy();
     // ensure that we are only selecting stations that have a market and system attached to
     // them
-    let filtered_stations: Vec<Station> = stations
+    let valid_stations: Vec<Station> = stations
         .iter()
         .filter(|station| {
             station.market_id.is_some()
@@ -175,7 +160,7 @@ pub async fn compute_single(
         .collect();
 
     // now we can compute the random subsample
-    let mut sample: Vec<Station> = filtered_stations
+    let mut random_sample: Vec<Station> = valid_stations
         .iter()
         .choose_multiple(&mut rng, sample_size)
         .iter()
@@ -184,14 +169,12 @@ pub async fn compute_single(
 
     let all_solutions: Mutex<Vec<TradeSolution>> = Mutex::new(Vec::new());
 
-    // FIXME this match needs a massive cleanup, we should collapse the Some and None arms
     match src {
         Some(ref source) => {
-            let mut stations_filtered: Vec<Station> = Vec::new();
-
-            if let Some(dst) = src_search_ly {
+            let stations_filtered: Vec<Station> = if let Some(dst) = src_search_ly {
+                // not a fixed source set, search within 'dst' LY of the source system
                 let source_system =
-                    get_system_by_name(&pool, &src.clone().expect("src must be specified")).await?;
+                    get_system_by_name(&pool, &src.as_ref().expect("src must be specified")).await?;
 
                 println!(
                     "Finding acceptable systems in {} LY range of {}",
@@ -210,7 +193,7 @@ pub async fn compute_single(
                 );
 
                 println!("Now filtering stations");
-                stations_filtered = stations
+                stations
                     .iter()
                     .filter(|x| {
                         !is_fleet_carrier(&x.name)
@@ -219,17 +202,12 @@ pub async fn compute_single(
                                 .is_some_and(|it| systems.contains(&it))
                     })
                     .map(|x| (*x).clone())
-                    .collect();
-                println!(
-                    "Have {} stations after filtering",
-                    stations_filtered.len().fg::<Orange>()
-                );
+                    .collect()
                 // TODO randomly subsample stations_filtered further? if it's a large number?
             } else {
-                // fixed source set
-                // compare each station
+                // fixed source set, pinned to a particular system
                 println!("Filtering all stations to fixed starting system '{source}'");
-                stations_filtered = stations
+                stations
                     .iter()
                     .filter(|x| {
                         x.system_name
@@ -237,17 +215,17 @@ pub async fn compute_single(
                             .is_some_and(|s| s.to_lowercase() == source.to_lowercase())
                     })
                     .map(|x| (*x).clone())
-                    .collect();
-            }
+                    .collect()
+            };
 
             // extend the random sample with our fixed subsample (for when we do market lookup)
-            sample.extend(stations_filtered.clone().into_iter());
+            random_sample.extend(stations_filtered.clone().into_iter());
 
             println!(
                 "Retrieving all commodities for {} sampled stations",
-                sample.len().fg::<Orange>()
+                random_sample.len().fg::<Orange>()
             );
-            let all_commodities = get_all_commodities(&sample, &pool, &date_cutoff).await?;
+            let all_commodities = get_all_commodities(&random_sample, &pool, &date_cutoff).await?;
 
             if all_commodities.is_empty() {
                 eprintln!("No commodities could be found after applying filtering. Maybe adjust your date cutoff?");
@@ -256,16 +234,19 @@ pub async fn compute_single(
 
             // nasty ass hack that we'll do to associate station names with system instances, since
             // we can't async inside the stations_filtered.par_iter()
-            println!("Associating station names with system instances (hack), standby...");
+            println!("Associating station names with system instances");
             let mut stations_systems_map: HashMap<String, System> = HashMap::new();
-            for station in &sample {
+            let hash_bar = ProgressBar::new(random_sample.len().try_into().unwrap());
+            for station in &random_sample {
                 if let Some(system_name) = &station.system_name {
                     stations_systems_map.insert(
                         station.name.clone(),
                         get_system_by_name(&pool, &system_name).await?,
                     );
                 }
+                hash_bar.inc(1);
             }
+            hash_bar.finish();
 
             println!(
                 "Computing trades for approx {} stations ({} '{source}'{})",
@@ -280,59 +261,16 @@ pub async fn compute_single(
                 }
             );
 
-            let bar = Arc::new(ProgressBar::new(
-                stations_filtered.len().try_into().unwrap(),
-            ));
-
-            stations_filtered.clone().par_iter().for_each(|station1| {
-                let bar = bar.clone();
-                let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
-                let station1_system = stations_systems_map
-                    .get(&station1.name)
-                    .expect("couldn't find system name");
-                {
-                    for station2 in &sample {
-                        // skip self
-                        if station2.id == station1.id {
-                            continue;
-                        }
-
-                        // ensure the other station is within the max distance (if it was specified)
-                        if let Some(dst) = max_dst {
-                            let station2_system = stations_systems_map
-                                .get(&station2.name)
-                                .expect("couldn't find system name");
-
-                            if station1_system
-                                .coords
-                                .geometry
-                                .unwrap()
-                                .dst(&station2_system.coords.geometry.unwrap())
-                                > dst.into()
-                            {
-                                continue;
-                            }
-                        }
-
-                        let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
-
-                        let solution = solve_knapsack(
-                            StationMarket::new(station1.clone(), commodities1.clone()),
-                            StationMarket::new(station2.clone(), commodities2.clone()),
-                            capacity,
-                            capital,
-                        );
-
-                        if let Some(sol) = solution {
-                            let mut access = all_solutions.lock().unwrap();
-                            access.push(sol.clone());
-                        }
-                    }
-                    bar.clone().inc(1);
-                }
-            });
-
-            bar.clone().finish();
+            do_solve(
+                &stations_filtered,
+                &random_sample,
+                &all_commodities,
+                &stations_systems_map,
+                capital,
+                capacity,
+                max_dst,
+                &all_solutions,
+            );
         }
 
         None => {
@@ -340,52 +278,48 @@ pub async fn compute_single(
             // here we compare every station with every other station in the list
             println!(
                 "Retrieving all commodities for {} sampled stations",
-                sample.len().fg::<Orange>()
+                random_sample.len().fg::<Orange>()
             );
-            let all_commodities = get_all_commodities(&sample, &pool, &date_cutoff).await?;
+            let all_commodities = get_all_commodities(&random_sample, &pool, &date_cutoff).await?;
             if all_commodities.is_empty() {
                 eprintln!("No commodities could be found after applying filtering. Maybe adjust your date cutoff?");
                 exit(1);
             }
 
+            // nasty ass hack that we'll do to associate station names with system instances, since
+            // we can't async inside the stations_filtered.par_iter()
+            println!("Associating station names with system instances");
+            let mut stations_systems_map: HashMap<String, System> = HashMap::new();
+            let hash_bar = ProgressBar::new(random_sample.len().try_into().unwrap());
+            for station in &random_sample {
+                if let Some(system_name) = &station.system_name {
+                    stations_systems_map.insert(
+                        station.name.clone(),
+                        get_system_by_name(&pool, &system_name).await?,
+                    );
+                }
+                hash_bar.inc(1);
+            }
+            hash_bar.finish();
+
             println!(
                 "Computing trades for {} stations (approx {} individual routes)",
-                sample.len().fg::<Orange>(),
+                random_sample.len().fg::<Orange>(),
                 // this is because its stations^2 minus self intersecting routes (like going from
                 // A->A)
-                (sample.len().pow(2) - sample.len()).fg::<Green>()
+                (random_sample.len().pow(2) - random_sample.len()).fg::<Green>()
             );
 
-            let bar = Arc::new(ProgressBar::new(sample.len().try_into().unwrap()));
-
-            sample.clone().par_iter().for_each(|station1| {
-                let bar = bar.clone();
-                let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
-                {
-                    for station2 in &sample {
-                        // skip self
-                        if station2.id == station1.id {
-                            continue;
-                        }
-                        let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
-
-                        let solution = solve_knapsack(
-                            StationMarket::new(station1.clone(), commodities1.clone()),
-                            StationMarket::new(station2.clone(), commodities2.clone()),
-                            capacity,
-                            capital,
-                        );
-
-                        if let Some(sol) = solution {
-                            let mut access = all_solutions.lock().unwrap();
-                            access.push(sol.clone());
-                        }
-                    }
-                    bar.clone().inc(1);
-                }
-            });
-
-            bar.clone().finish();
+            do_solve(
+                &random_sample,
+                &random_sample,
+                &all_commodities,
+                &stations_systems_map,
+                capital,
+                capacity,
+                max_dst,
+                &all_solutions,
+            );
         }
     }
 
@@ -403,6 +337,69 @@ pub async fn compute_single(
     }
 
     Ok(())
+}
+
+fn do_solve(
+    query: &[Station],
+    sample: &[Station],
+    all_commodities: &Arc<DashMap<i64, Vec<Commodity>>>,
+    stations_systems_map: &HashMap<String, System>,
+    capital: u64,
+    capacity: u32,
+    max_dst: Option<f32>,
+    all_solutions: &Mutex<Vec<TradeSolution>>,
+) {
+    let bar = Arc::new(ProgressBar::new(query.len().try_into().unwrap()));
+
+    query.par_iter().for_each(|station1| {
+        let bar = bar.clone();
+        let commodities1 = all_commodities.get(&station1.id).unwrap().to_owned();
+        let station1_system = stations_systems_map
+            .get(&station1.name)
+            .expect("couldn't find system name");
+        {
+            for station2 in sample {
+                // skip self
+                if station2.id == station1.id {
+                    continue;
+                }
+
+                // ensure the other station is within the max distance (if it was specified)
+                if let Some(dst) = max_dst {
+                    let station2_system = stations_systems_map
+                        .get(&station2.name)
+                        .expect("couldn't find system name");
+
+                    if station1_system
+                        .coords
+                        .geometry
+                        .unwrap()
+                        .dst(&station2_system.coords.geometry.unwrap())
+                        > dst.into()
+                    {
+                        continue;
+                    }
+                }
+
+                let commodities2 = all_commodities.get(&station2.id).unwrap().to_owned();
+
+                let solution = solve_knapsack(
+                    StationMarket::new(station1.clone(), commodities1.clone()),
+                    StationMarket::new(station2.clone(), commodities2.clone()),
+                    capacity,
+                    capital,
+                );
+
+                if let Some(sol) = solution {
+                    let mut access = all_solutions.lock().unwrap();
+                    access.push(sol.clone());
+                }
+            }
+            bar.inc(1);
+        }
+    });
+
+    bar.finish();
 }
 
 /// Finds cheapest commodities in the database
