@@ -18,7 +18,7 @@ color-eyre = "0.6.3"
 tokio = { version = "1.42.0", features = ["full"] }
 futures = "0.3.31"
 geozero = { version = "0.14.0", features = ["with-postgis-postgres", "with-postgis-sqlx", "with-wkb"] }
-good_lp = { version = "1.10.0", features = ["highs"] }
+good_lp = { version = "1.10.0", features = ["highs"], default_features = false }
 rand = { version = "0.8.5", features = ["small_rng"] }
 itertools = "0.13.0"
 dashmap = { version = "6.1.0", features = ["inline"] }
