@@ -11,6 +11,7 @@ jobs:
   build:
     name: Build
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -30,7 +31,7 @@ jobs:
       - name: Install deps
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libzmq3-dev
+          packages: coinor-cbc coinor-libcbc-dev
           version: 1.0
         if: matrix.os != 'windows-latest'
 
@@ -47,8 +48,8 @@ jobs:
           prerelease: false
 
       - name: Tar XZ the binary
-        run: tar -C target/release -cJf kural-linux-x64.tar.xz kural
+        run: tar -C target/release -cJf kural-${{ matrix.os }}-x64.tar.xz kural
 
       - name: Upload asset
         run: |
-          gh release upload ${{ github.event.inputs.tag }} ./kural-linux-x64.tar.xz
+          gh release upload ${{ github.event.inputs.tag }} ./kural-${{ matrix.os }}-x64.tar.xz
