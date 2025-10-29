@@ -87,7 +87,7 @@ impl FromWkb for Coordinate {
 impl Coordinate {
     /// Euclidean distance between this coordinate and the other coordinate
     pub fn dst(&self, other: &Coordinate) -> f64 {
-        return euclidean(&[self.x, self.y, self.z], &[other.x, other.y, other.z]);
+        euclidean(&[self.x, self.y, self.z], &[other.x, other.y, other.z])
     }
 }
 
@@ -181,7 +181,11 @@ impl TradeSolution {
     pub async fn dump_coloured(&self, pool: &Pool<Postgres>) -> String {
         let mut str = format!(
             "➡️ For {} CR profit:\n    Travel to {} in {} and buy (for {} CR):\n",
-            self.profit.round().separate_with_commas().fg::<Green>().bold(),
+            self.profit
+                .round()
+                .separate_with_commas()
+                .fg::<Green>()
+                .bold(),
             self.source.name.fg::<Orange>(),
             self.source.get_system_name(pool).await.fg::<Orange>(),
             // often we just get like .000006, so ignore it for the buy cost

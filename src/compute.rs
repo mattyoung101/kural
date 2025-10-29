@@ -5,7 +5,7 @@ use crate::LandingPad;
 use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use color_eyre::Result;
 use dashmap::DashMap;
-use futures::{executor, StreamExt};
+use futures::StreamExt;
 use geozero::wkb;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -174,7 +174,7 @@ pub async fn compute_single(
             let stations_filtered: Vec<Station> = if let Some(dst) = src_search_ly {
                 // not a fixed source set, search within 'dst' LY of the source system
                 let source_system =
-                    get_system_by_name(&pool, &src.as_ref().expect("src must be specified")).await?;
+                    get_system_by_name(&pool, src.as_ref().expect("src must be specified")).await?;
 
                 println!(
                     "Finding acceptable systems in {} LY range of {}",
@@ -241,7 +241,7 @@ pub async fn compute_single(
                 if let Some(system_name) = &station.system_name {
                     stations_systems_map.insert(
                         station.name.clone(),
-                        get_system_by_name(&pool, &system_name).await?,
+                        get_system_by_name(&pool, system_name).await?,
                     );
                 }
                 hash_bar.inc(1);
@@ -295,7 +295,7 @@ pub async fn compute_single(
                 if let Some(system_name) = &station.system_name {
                     stations_systems_map.insert(
                         station.name.clone(),
-                        get_system_by_name(&pool, &system_name).await?,
+                        get_system_by_name(&pool, system_name).await?,
                     );
                 }
                 hash_bar.inc(1);
@@ -339,6 +339,7 @@ pub async fn compute_single(
     Ok(())
 }
 
+/// Break out of compute_single that actually computes the solution
 fn do_solve(
     query: &[Station],
     sample: &[Station],
