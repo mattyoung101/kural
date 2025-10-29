@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "kural"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "chrono-humanize",

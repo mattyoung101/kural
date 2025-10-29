@@ -1,0 +1,54 @@
+name: "Release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Specify tag to create"
+        required: true
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      SQLX_OFFLINE: true
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    permissions: write-all
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          rustflags: ""
+
+      - name: Install deps
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libzmq3-dev
+          version: 1.0
+        if: matrix.os != 'windows-latest'
+
+      - name: Compile
+        run: cargo build --release
+
+      - name: Create Release
+        id: create-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          name: ${{ github.event.inputs.tag }}
+          draft: true
+          prerelease: false
+
+      - name: Tar XZ the binary
+        run: tar -C target/release -cJf kural-linux-x64.tar.xz kural
+
+      - name: Upload asset
+        run: |
+          gh release upload ${{ github.event.inputs.tag }} ./kural-linux-x64.tar.xz
