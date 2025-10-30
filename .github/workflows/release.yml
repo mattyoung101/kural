@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-22.04, windows-2022]
     runs-on: ${{ matrix.os }}
     env:
       SQLX_OFFLINE: true
@@ -33,7 +33,7 @@ jobs:
         with:
           packages: coinor-cbc coinor-libcbc-dev
           version: 1.0
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-2022'
 
       - name: Compile
         run: cargo build --release
@@ -46,6 +46,10 @@ jobs:
           name: ${{ github.event.inputs.tag }}
           draft: true
           prerelease: false
+
+      - name: Dump folder contents (debug)
+        run: tree /f /a
+        if: matrix.os == 'windows-2022'
 
       - name: Tar XZ the binary
         run: tar -C target/release -cJf kural-${{ matrix.os }}-x64.tar.xz kural
