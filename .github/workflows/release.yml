@@ -51,9 +51,20 @@ jobs:
         run: tree /f /a
         if: matrix.os == 'windows-2022'
 
-      - name: Tar XZ the binary
+      - name: Tar XZ the binary (Linux)
         run: tar -C target/release -cJf kural-${{ matrix.os }}-x64.tar.xz kural
+        if: matrix.os != 'windows-2022'
 
-      - name: Upload asset
+      - name: Upload asset (Linux)
         run: |
           gh release upload ${{ github.event.inputs.tag }} ./kural-${{ matrix.os }}-x64.tar.xz
+        if: matrix.os != 'windows-2022'
+
+      - name: Tar GZ the binary (Windows)
+        run: tar -C target/release -czf kural-${{ matrix.os }}-x64.tar.gz kural.exe
+        if: matrix.os == 'windows-2022'
+
+      - name: Upload asset (Windows)
+        run: |
+          gh release upload ${{ github.event.inputs.tag }} ./kural-${{ matrix.os }}-x64.tar.gz
+        if: matrix.os == 'windows-2022'
